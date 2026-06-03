@@ -166,6 +166,45 @@ def test_stream_chat_skips_gemini(providers, env, quota):
         next(gen)
 
 
+def test_cooldown_expires_and_provider_reeligible(providers, env, quota):
+    t = [0.0]
+    post = make_post({"alpha.test": (429, {}), "beta.test": (200, openai_body("beta"))})
+    pool = Pool(
+        providers, quota=quota, env=env, post=post, cooldown_seconds=60.0, clock=lambda: t[0]
+    )
+    pool.ask("hi", providers=["alpha", "beta"])  # alpha 429 at t=0 → cooled until t=60
+    assert pool._cooldown_until["alpha"] == 60.0
+    # advance the clock past the cooldown window; alpha works again now
+    t[0] = 61.0
+    pool._post = make_post(
+        {"alpha.test": (200, openai_body("alpha")), "beta.test": (200, openai_body("beta"))}
+    )
+    r = pool.ask("hi", providers=["alpha", "beta"])
+    assert r.provider_id == "alpha"  # no longer cooled + least-used → tried first
+
+
+def test_stream_chat_skips_disabled_model(env, quota):
+    from freellmpool.models import Model, Provider
+
+    prov = Provider(
+        id="x",
+        label="X",
+        adapter="openai",
+        base_url="https://x.test/v1",
+        key_env="X_KEY",
+        models=(Model("on"), Model("off", enabled=False)),
+    )
+    sp = make_stream_post({})
+    pool = Pool([prov], quota=quota, env={"X_KEY": "k"}, stream_post=sp)
+    gen = pool.stream_chat([{"role": "user", "content": "hi"}])  # auto
+    assert next(gen)["model"] == "on"
+    list(gen)
+    assert len(sp.calls) == 1  # disabled model never hit
+    # explicit pin can still stream the disabled one
+    gen2 = pool.stream_chat([{"role": "user", "content": "hi"}], model="off")
+    assert next(gen2)["model"] == "off"
+
+
 def test_disabled_model_skipped_by_auto_but_reachable_explicitly(env, quota):
     from freellmpool.models import Model, Provider
 

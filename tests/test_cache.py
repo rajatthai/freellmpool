@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from helpers import make_post
+from helpers import make_post, make_stream_post
 
 from freellmpool.cache import Cache
 from freellmpool.router import Pool
@@ -37,8 +37,44 @@ def test_pool_uses_cache(providers, env, quota, tmp_path):
 
     r2 = pool.ask("hello")  # identical → served from cache, no new provider call
     assert r2.text == "ok" and r2.cached
+    assert r2.provider_id == r1.provider_id  # cached reply preserves the original provider
     assert len(post.calls) == n_after_first  # no extra network call
     assert pool.stats["cache_hits"] == 1
+
+
+def test_cache_preserves_tool_calls(providers, env, quota, tmp_path):
+    tc = [{"id": "c", "type": "function", "function": {"name": "f", "arguments": "{}"}}]
+    post = make_post(
+        {
+            "alpha.test": (
+                200,
+                {
+                    "choices": [
+                        {"message": {"role": "assistant", "content": None, "tool_calls": tc}}
+                    ]
+                },
+            )
+        }
+    )
+    cache = Cache(ttl=999.0, path=tmp_path / "c.db")
+    pool = Pool(providers, quota=quota, env=env, post=post, cache=cache)
+    tools = [{"type": "function", "function": {"name": "f"}}]
+    pool.ask("hi", providers=["alpha"], tools=tools)
+    n = len(post.calls)
+    r2 = pool.ask("hi", providers=["alpha"], tools=tools)  # identical → cached
+    assert r2.cached
+    assert r2.message["tool_calls"] == tc  # tool_calls survive the round-trip through cache
+    assert len(post.calls) == n  # no new provider call
+
+
+def test_streaming_bypasses_cache(providers, env, quota, tmp_path):
+    cache = Cache(ttl=999.0, path=tmp_path / "c.db")
+    sp = make_stream_post({})
+    pool = Pool(providers, quota=quota, env=env, post=make_post({}), stream_post=sp, cache=cache)
+    list(pool.stream_chat([{"role": "user", "content": "hi"}], providers=["alpha"]))
+    list(pool.stream_chat([{"role": "user", "content": "hi"}], providers=["alpha"]))
+    assert len(sp.calls) == 2  # streaming is not cached — both hit the provider
+    assert pool.stats["cache_hits"] == 0
 
 
 def test_cache_distinguishes_prompts(providers, env, quota, tmp_path):

@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 
 import pytest
-from helpers import make_post, make_stream_post
+from helpers import gemini_body, make_post, make_stream_post
 
 from freellmpool.proxy import _parse_model, serve
 from freellmpool.router import Pool
@@ -97,11 +97,15 @@ def test_streaming_sse(server):
         assert resp.headers["Content-Type"] == "text/event-stream"
         raw = resp.read().decode()
     assert raw.strip().endswith("[DONE]")
-    content = ""
-    for line in raw.splitlines():
-        if line.startswith("data: ") and "[DONE]" not in line:
-            chunk = json.loads(line[len("data: ") :])
-            content += chunk["choices"][0]["delta"].get("content", "")
+    chunks = [
+        json.loads(ln[len("data: ") :])
+        for ln in raw.splitlines()
+        if ln.startswith("data: ") and "[DONE]" not in ln
+    ]
+    assert all(c["object"] == "chat.completion.chunk" for c in chunks)
+    assert chunks[0]["choices"][0]["delta"].get("role") == "assistant"  # role delta first
+    assert chunks[-1]["choices"][0]["finish_reason"] == "stop"  # stop chunk last
+    content = "".join(c["choices"][0]["delta"].get("content", "") for c in chunks)
     assert content == "ok"
 
 
@@ -256,6 +260,58 @@ def test_proxy_tool_calls_passthrough(providers, env, quota):
         )
         assert body["choices"][0]["finish_reason"] == "tool_calls"
         assert body["choices"][0]["message"]["tool_calls"] == tc
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def _serve(pool, api_key=None):
+    httpd = serve(pool, host="127.0.0.1", port=0, api_key=api_key)
+    t = threading.Thread(target=httpd.serve_forever, daemon=True)
+    t.start()
+    return httpd, f"http://127.0.0.1:{httpd.server_address[1]}"
+
+
+def test_auth_required_on_all_post_routes(providers, env, quota):
+    pool = Pool(
+        providers, quota=quota, env=env, post=make_post({}), stream_post=make_stream_post({})
+    )
+    httpd, base = _serve(pool, api_key="secret")
+    routes = {
+        "/v1/chat/completions": {"model": "auto", "messages": [{"role": "user", "content": "hi"}]},
+        "/v1/embeddings": {"model": "auto", "input": ["x"]},
+        "/v1/responses": {"model": "auto", "input": "hi"},
+        "/v1/messages": {
+            "model": "claude",
+            "max_tokens": 10,
+            "messages": [{"role": "user", "content": "hi"}],
+        },
+        "/v1/messages/count_tokens": {"messages": [{"role": "user", "content": "hi"}]},
+    }
+    try:
+        for path, body in routes.items():
+            assert _expect_status(base + path, body) == 401, f"{path} unauth should be 401"
+            got = _expect_status(base + path, body, {"Authorization": "Bearer secret"})
+            assert got != 401, f"{path} with key should not be 401 (got {got})"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_gemini_adapter_via_proxy(providers, env, quota):
+    # 'gee' is a gemini-adapter provider; routing model="gee" must use the gemini body shape
+    post = make_post({"gee.test": (200, gemini_body("hi from gemini"))})
+    pool = Pool(providers, quota=quota, env=env, post=post)
+    httpd, base = _serve(pool)
+    try:
+        status, body = _post_json(
+            base + "/v1/chat/completions",
+            {"model": "gee", "messages": [{"role": "user", "content": "hi"}]},
+        )
+        assert status == 200
+        assert body["choices"][0]["message"]["content"] == "hi from gemini"
+        gee_call = next(c for c in post.calls if "gee.test" in c["url"])
+        assert "contents" in gee_call["body"]  # gemini shape, not OpenAI
     finally:
         httpd.shutdown()
         httpd.server_close()

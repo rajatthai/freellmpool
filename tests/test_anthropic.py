@@ -20,8 +20,11 @@ from freellmpool.router import Pool
 
 
 def test_claude_models_alias_to_auto():
-    assert resolve_alias("claude-sonnet-4-20250514", {}) == "auto"
-    assert resolve_alias("claude-3-5-haiku-20241022", {}) == "auto"
+    assert resolve_alias("claude-3-5-haiku-20241022", {}) == "auto"  # in default map
+    # prefix fallback: an unknown future claude name still routes to a free model
+    assert resolve_alias("claude-opus-5-20260101", {}) == "auto"
+    assert resolve_alias("gpt-6-turbo", {}) == "auto"  # unknown gpt-* too
+    assert resolve_alias("llama-3.3-70b", {}) == "llama-3.3-70b"  # non-frontier passes through
 
 
 def test_request_to_chat_text_and_system():
@@ -93,11 +96,19 @@ def test_reply_to_message_tool_use():
 def test_reply_to_sse_sequence():
     r = Reply(text="hi", provider_id="groq", model="m", raw={})
     events = list(reply_to_sse(r, "claude-3-5-sonnet"))
-    types = [e.split("\n", 1)[0] for e in events]
-    assert types[0] == "event: message_start"
-    assert "event: content_block_start" in types
-    assert "event: content_block_delta" in types
-    assert types[-1] == "event: message_stop"
+    types = [e.split("\n", 1)[0].removeprefix("event: ") for e in events]
+    # exact Anthropic ordering (a reordered sequence would break Claude Code)
+    assert types == [
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_stop",
+        "message_delta",
+        "message_stop",
+    ]
+    # the text delta carries the reply
+    delta = json.loads(events[2].split("data: ", 1)[1])
+    assert delta["delta"] == {"type": "text_delta", "text": "hi"}
 
 
 def test_request_to_chat_robust_to_malformed():
@@ -156,6 +167,56 @@ def test_proxy_messages_route(providers, env, quota):
         assert body["type"] == "message"
         assert body["content"][0]["text"] == "ok"
         assert body["role"] == "assistant"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_proxy_messages_tool_use(providers, env, quota):
+    from freellmpool.proxy import serve
+
+    tc = [
+        {
+            "id": "tu_1",
+            "type": "function",
+            "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'},
+        }
+    ]
+    post = make_post(
+        {
+            "alpha.test": (
+                200,
+                {
+                    "choices": [
+                        {"message": {"role": "assistant", "content": None, "tool_calls": tc}}
+                    ]
+                },
+            )
+        }
+    )
+    pool = Pool(providers, quota=quota, env=env, post=post)
+    httpd = serve(pool, host="127.0.0.1", port=0)
+    t = threading.Thread(target=httpd.serve_forever, daemon=True)
+    t.start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        status, body = _post(
+            base + "/v1/messages",
+            {
+                "model": "alpha",  # pin to the tool-returning backend
+                "max_tokens": 100,
+                "tools": [
+                    {"name": "get_weather", "description": "w", "input_schema": {"type": "object"}}
+                ],
+                "messages": [{"role": "user", "content": "weather in Paris?"}],
+            },
+        )
+        assert status == 200
+        assert body["stop_reason"] == "tool_use"
+        block = body["content"][0]
+        assert block["type"] == "tool_use"
+        assert block["name"] == "get_weather"
+        assert block["input"] == {"city": "Paris"}
     finally:
         httpd.shutdown()
         httpd.server_close()

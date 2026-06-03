@@ -1,10 +1,14 @@
-"""Adapter behavior: thinking-model handling, header shaping."""
+"""Adapter behavior: thinking-model handling, header shaping, stream lifecycle."""
 
 from __future__ import annotations
 
+import json
+
+import pytest
 from helpers import make_post, openai_body
 
 from freellmpool import client as C
+from freellmpool.errors import ProviderHTTPError
 from freellmpool.models import Model, Provider
 
 P = Provider(
@@ -87,3 +91,62 @@ def test_think_tags_stripped():
         P, "zai-glm-4.7", [{"role": "user", "content": "hi"}], api_key="k", env={}, post=post
     )
     assert reply.text == "final answer"
+
+
+# ---- streaming connection lifecycle (the real _StreamLines.close path) ----
+
+class _SpyLines:
+    """A closeable line iterator that records whether close() was called."""
+
+    def __init__(self, lines):
+        self._lines = list(lines)
+        self.closed = False
+
+    def __iter__(self):
+        yield from self._lines
+
+    def close(self):
+        self.closed = True
+
+
+def _sse(*deltas):
+    return [f"data: {json.dumps({'choices': [{'delta': {'content': d}}]})}" for d in deltas] + [
+        "data: [DONE]"
+    ]
+
+
+def test_stream_call_closes_on_non_200():
+    spy = _SpyLines([])
+
+    def stream_post(url, headers, body, timeout):
+        return 500, spy
+
+    gen = C.stream_call(P, "m", [{"role": "user", "content": "hi"}], api_key="k", env={}, stream_post=stream_post)
+    with pytest.raises(ProviderHTTPError):
+        next(gen)  # status check happens on first iteration
+    assert spy.closed is True  # connection released before the error propagated
+
+
+def test_stream_call_closes_on_early_break():
+    spy = _SpyLines(_sse("a", "b", "c"))
+
+    def stream_post(url, headers, body, timeout):
+        return 200, spy
+
+    gen = C.stream_call(P, "m", [{"role": "user", "content": "hi"}], api_key="k", env={}, stream_post=stream_post)
+    assert next(gen) == "a"
+    gen.close()  # consumer abandons the stream early
+    assert spy.closed is True  # try/finally released the connection
+
+
+def test_stream_call_closes_on_exhaustion():
+    spy = _SpyLines(_sse("x", "y"))
+
+    def stream_post(url, headers, body, timeout):
+        return 200, spy
+
+    out = list(
+        C.stream_call(P, "m", [{"role": "user", "content": "hi"}], api_key="k", env={}, stream_post=stream_post)
+    )
+    assert out == ["x", "y"]
+    assert spy.closed is True
