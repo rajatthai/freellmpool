@@ -1,0 +1,125 @@
+# llmbuffet built-in provider catalog.
+#
+# Each [[provider]] describes a free-tier LLM endpoint. Keys are NEVER stored
+# here — only the *name* of the environment variable that holds the key.
+# Users supply their own keys (see .env.example).
+#
+# Fields:
+#   id        unique short id
+#   label     human-friendly name
+#   adapter   "openai" | "gemini" | "cloudflare"  (request/response shape)
+#   base_url  endpoint base (may contain {account_id} for cloudflare)
+#   key_env   env var holding the API key (provider is skipped if unset)
+#   extra_env optional list of additional required env vars
+#   models    list of { name, rpd } — rpd is a free-tier daily request hint
+#             used for quota tracking (0 = unknown/unlimited-ish).
+#
+# rpd values are conservative public free-tier hints as of 2026 and may drift;
+# llmbuffet treats them as soft budgets, not hard guarantees. Edit freely or
+# override per-user in ~/.config/llmbuffet/providers.toml.
+
+[[provider]]
+id = "groq"
+label = "Groq"
+adapter = "openai"
+base_url = "https://api.groq.com/openai/v1"
+key_env = "GROQ_API_KEY"
+models = [
+    { name = "llama-3.3-70b-versatile", rpd = 1000 },
+    { name = "llama-3.1-8b-instant", rpd = 1000 },
+    { name = "openai/gpt-oss-120b", rpd = 1000 },
+    { name = "openai/gpt-oss-20b", rpd = 1000 },
+]
+
+[[provider]]
+id = "cerebras"
+label = "Cerebras"
+adapter = "openai"
+base_url = "https://api.cerebras.ai/v1"
+key_env = "CEREBRAS_API_KEY"
+models = [
+    { name = "gpt-oss-120b", rpd = 14400 },
+    { name = "qwen-3-235b-a22b-instruct-2507", rpd = 14400 },
+    { name = "llama3.1-8b", rpd = 14400 },
+]
+
+[[provider]]
+id = "openrouter"
+label = "OpenRouter (free models)"
+adapter = "openai"
+base_url = "https://openrouter.ai/api/v1"
+key_env = "OPENROUTER_API_KEY"
+models = [
+    { name = "meta-llama/llama-3.3-70b-instruct:free", rpd = 1000 },
+    { name = "qwen/qwen3-next-80b-a3b-instruct:free", rpd = 1000 },
+    { name = "deepseek/deepseek-chat-v3.1:free", rpd = 1000 },
+]
+
+[[provider]]
+id = "gemini"
+label = "Google Gemini"
+adapter = "gemini"
+base_url = "https://generativelanguage.googleapis.com/v1beta"
+key_env = "GEMINI_API_KEY"
+models = [
+    { name = "gemini-2.0-flash", rpd = 1500 },
+    { name = "gemini-2.0-flash-lite", rpd = 1500 },
+]
+
+[[provider]]
+id = "github"
+label = "GitHub Models"
+adapter = "openai"
+base_url = "https://models.github.ai/inference"
+key_env = "GITHUB_TOKEN"
+models = [
+    { name = "openai/gpt-4.1-mini", rpd = 150 },
+    { name = "openai/gpt-4.1-nano", rpd = 150 },
+    { name = "mistral-ai/mistral-small-2503", rpd = 150 },
+]
+
+[[provider]]
+id = "cloudflare"
+label = "Cloudflare Workers AI"
+adapter = "cloudflare"
+base_url = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1"
+key_env = "CLOUDFLARE_API_TOKEN"
+extra_env = ["CLOUDFLARE_ACCOUNT_ID"]
+models = [
+    { name = "@cf/meta/llama-3.3-70b-instruct-fp8-fast", rpd = 0 },
+    { name = "@cf/google/gemma-3-12b-it", rpd = 0 },
+    { name = "@cf/mistralai/mistral-small-3.1-24b-instruct", rpd = 0 },
+]
+
+[[provider]]
+id = "mistral"
+label = "Mistral"
+adapter = "openai"
+base_url = "https://api.mistral.ai/v1"
+key_env = "MISTRAL_API_KEY"
+models = [
+    { name = "mistral-small-latest", rpd = 0 },
+    { name = "open-mistral-nemo", rpd = 0 },
+]
+
+[[provider]]
+id = "cohere"
+label = "Cohere"
+adapter = "openai"
+base_url = "https://api.cohere.ai/compatibility/v1"
+key_env = "COHERE_API_KEY"
+models = [
+    { name = "command-r-plus-08-2024", rpd = 0 },
+    { name = "command-r-08-2024", rpd = 0 },
+]
+
+[[provider]]
+id = "sambanova"
+label = "SambaNova"
+adapter = "openai"
+base_url = "https://api.sambanova.ai/v1"
+key_env = "SAMBANOVA_API_KEY"
+models = [
+    { name = "Meta-Llama-3.3-70B-Instruct", rpd = 0 },
+    { name = "DeepSeek-V3.1", rpd = 0 },
+]
