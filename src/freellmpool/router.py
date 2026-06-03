@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from . import client as _client
 from .client import PostFn, default_post
-from .config import configured_providers, load_catalog
+from .config import configured_providers, effective_env, load_catalog, settings
 from .errors import AllProvidersExhausted, NoProvidersConfigured, ProviderHTTPError
 from .models import Provider, Reply
 from .quota import QuotaStore
@@ -77,9 +77,11 @@ class Pool:
         quota: QuotaStore | None = None,
         post: PostFn = default_post,
     ) -> Pool:
-        env = env if env is not None else dict(os.environ)
+        # Merge config.toml [keys] underneath the real environment.
+        env = effective_env(env)
         providers = configured_providers(load_catalog(), env)
-        return cls(providers, quota=quota, env=env, post=post)
+        cooldown = float(settings(env).get("cooldown_seconds", 60.0))
+        return cls(providers, quota=quota, env=env, post=post, cooldown_seconds=cooldown)
 
     # ---- candidate ordering -------------------------------------------
 

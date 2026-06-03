@@ -13,7 +13,7 @@ import os
 import sys
 
 from . import __version__
-from .config import configured_providers, load_catalog, resolve_alias
+from .config import configured_providers, load_catalog, resolve_alias, settings
 from .errors import AllProvidersExhausted, NoProvidersConfigured
 from .quota import QuotaStore
 from .router import Pool
@@ -153,7 +153,12 @@ def cmd_proxy(args: argparse.Namespace) -> int:
         )
         return 3
 
-    proxy_key = args.api_key or os.environ.get("FREELLMPOOL_PROXY_KEY") or None
+    proxy_key = (
+        args.api_key
+        or os.environ.get("FREELLMPOOL_PROXY_KEY")
+        or settings().get("proxy_key")
+        or None
+    )
     loopback = args.host in {"127.0.0.1", "localhost", "::1"}
     if not loopback and not proxy_key:
         print(

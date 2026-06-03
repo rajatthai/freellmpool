@@ -60,6 +60,9 @@ def resolve_alias(name: str, env: dict[str, str] | None = None) -> str:
     for key, value in env.items():
         if key.startswith(_ALIAS_ENV_PREFIX) and _norm(key[len(_ALIAS_ENV_PREFIX) :]) == target:
             return value or name
+    cfg_aliases = load_config_file(env).get("aliases", {})
+    if name in cfg_aliases:
+        return str(cfg_aliases[name])
     return _DEFAULT_ALIASES.get(name, name)
 
 
@@ -69,6 +72,48 @@ def _user_catalog_path() -> Path | None:
         return Path(override).expanduser()
     default = Path.home() / ".config" / "freellmpool" / "providers.toml"
     return default if default.exists() else None
+
+
+def _config_file_path(env: dict[str, str]) -> Path | None:
+    override = env.get("FREELLMPOOL_CONFIG_FILE")
+    if override:
+        return Path(override).expanduser()
+    default = Path.home() / ".config" / "freellmpool" / "config.toml"
+    return default if default.exists() else None
+
+
+def load_config_file(env: dict[str, str] | None = None) -> dict:
+    """Load the optional config.toml. Returns {} if none exists.
+
+    Recognized tables:
+        [keys]      PROVIDER_API_KEY = "..."   (provider key env vars)
+        [aliases]   "gpt-4o-mini" = "auto"     (model name -> free target)
+        [settings]  cooldown_seconds = 60, proxy_key = "...", host/port
+    """
+    env = env if env is not None else dict(os.environ)
+    path = _config_file_path(env)
+    if path is None:
+        return {}
+    try:
+        with path.open("rb") as fh:
+            return tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+
+
+def effective_env(env: dict[str, str] | None = None) -> dict[str, str]:
+    """Real environment with config-file ``[keys]`` filled in underneath, so
+    actual env vars always win but config.toml provides defaults."""
+    env = env if env is not None else dict(os.environ)
+    keys = load_config_file(env).get("keys", {})
+    merged = {str(k): str(v) for k, v in keys.items() if v}
+    merged.update(env)
+    return merged
+
+
+def settings(env: dict[str, str] | None = None) -> dict:
+    """The ``[settings]`` table from config.toml (or {})."""
+    return load_config_file(env).get("settings", {})
 
 
 def _parse_catalog(data: dict) -> list[Provider]:

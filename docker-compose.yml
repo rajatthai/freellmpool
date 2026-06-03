@@ -1,0 +1,41 @@
+# freellmpool + Open WebUI — a free, self-hosted ChatGPT in two containers.
+#
+#   docker compose up -d
+#   open http://localhost:3000   (Open WebUI, talking to freellmpool)
+#
+# Works with zero API keys (keyless providers). Add keys to unlock more — either
+# export them in your shell or drop them in a .env file next to this one.
+services:
+  freellmpool:
+    build: .
+    # or use the published image instead of building:
+    # image: ghcr.io/0xzr/freellmpool:latest
+    ports:
+      - "8080:8080"
+    environment:
+      # All optional — freellmpool works with none of them set.
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      # Require a Bearer token from clients (recommended when exposed):
+      FREELLMPOOL_PROXY_KEY: ${FREELLMPOOL_PROXY_KEY:-}
+    restart: unless-stopped
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    ports:
+      - "3000:8080"
+    environment:
+      OPENAI_API_BASE_URL: http://freellmpool:8080/v1
+      OPENAI_API_KEY: ${FREELLMPOOL_PROXY_KEY:-anything}
+      WEBUI_AUTH: "false"
+    depends_on:
+      - freellmpool
+    volumes:
+      - open-webui:/app/backend/data
+    restart: unless-stopped
+
+volumes:
+  open-webui:
