@@ -238,7 +238,7 @@ class Pool:
         cache_key = None
         if self._cache is not None:
             cache_key = self._cache.make_key(
-                messages, model, provider_list, max_tokens, temperature, tools
+                messages, model, provider_list, max_tokens, temperature, tools, tool_choice
             )
             hit = self._cache.get(cache_key)
             if hit is not None:
@@ -292,7 +292,7 @@ class Pool:
                 )
             except ProviderHTTPError as exc:
                 if exc.status == 429:
-                    self._mark_cooldown(target.provider.id, now)
+                    self._mark_cooldown(target.provider.id, self._clock())
                     rate_limited.add(target.provider.id)
                 attempts.append((target.name, str(exc)))
                 continue
@@ -379,7 +379,7 @@ class Pool:
                 continue
             except ProviderHTTPError as exc:
                 if exc.status == 429:
-                    self._mark_cooldown(target.provider.id, now)
+                    self._mark_cooldown(target.provider.id, self._clock())
                     rate_limited.add(target.provider.id)
                 attempts.append((target.name, str(exc)))
                 continue

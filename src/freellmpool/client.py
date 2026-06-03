@@ -35,6 +35,7 @@ _THINKING_HINTS = (
     "magistral",
     "deepseek-r1",
     "nemotron",
+    "gpt-oss",  # emits reasoning; needs token headroom or content comes back empty
 )
 _THINKING_FLOOR = 8192
 
@@ -78,24 +79,45 @@ def default_post(url: str, headers: dict, json_body: dict, timeout: float) -> HT
     return HTTPResult(status=resp.status_code, body=body, text=resp.text)
 
 
+class _StreamLines:
+    """An explicitly-closeable line iterator that owns the httpx stream + client,
+    so the connection is released on exhaustion, early close, OR non-200 (where
+    the caller closes it before ever iterating)."""
+
+    def __init__(self, cm, resp, client):
+        self._cm, self._resp, self._client = cm, resp, client
+        self._closed = False
+
+    def __iter__(self) -> Iterator[str]:
+        try:
+            yield from self._resp.iter_lines()
+        finally:
+            self.close()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._cm.__exit__(None, None, None)
+        except Exception:  # noqa: BLE001 — best-effort cleanup
+            pass
+        self._client.close()
+
+
 def default_stream_post(url: str, headers: dict, json_body: dict, timeout: float):
-    """Open a streaming POST and return (status, line_iterator). The iterator
-    keeps the httpx connection open and closes it when exhausted."""
+    """Open a streaming POST and return (status, closeable line iterator)."""
     import httpx
 
     headers = {"User-Agent": _USER_AGENT, **headers}
     client = httpx.Client(timeout=timeout)
     cm = client.stream("POST", url, headers=headers, json=json_body)
-    resp = cm.__enter__()
-
-    def lines() -> Iterator[str]:
-        try:
-            yield from resp.iter_lines()
-        finally:
-            cm.__exit__(None, None, None)
-            client.close()
-
-    return resp.status_code, lines()
+    try:
+        resp = cm.__enter__()
+    except BaseException:
+        client.close()
+        raise
+    return resp.status_code, _StreamLines(cm, resp, client)
 
 
 def stream_call(
@@ -131,29 +153,31 @@ def stream_call(
         "stream": True,
     }
     status, line_iter = stream_post(url, headers, body, timeout)
+    close = getattr(line_iter, "close", lambda: None)
     if status != 200:
-        close = getattr(line_iter, "close", None)
-        if close:
-            close()
+        close()
         raise ProviderHTTPError(status, f"HTTP {status}", retryable=_retryable(status))
-    for line in line_iter:
-        if not line:
-            continue
-        if line.startswith("data:"):
-            line = line[len("data:") :]
-        line = line.strip()
-        if not line or line == "[DONE]":
-            if line == "[DONE]":
-                break
-            continue
-        try:
-            obj = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        choices = obj.get("choices") or [{}]
-        delta = (choices[0].get("delta") or {}).get("content")
-        if delta:
-            yield delta
+    try:
+        for line in line_iter:
+            if not line:
+                continue
+            if line.startswith("data:"):
+                line = line[len("data:") :]
+            line = line.strip()
+            if not line or line == "[DONE]":
+                if line == "[DONE]":
+                    break
+                continue
+            try:
+                obj = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            choices = obj.get("choices") or [{}]
+            delta = (choices[0].get("delta") or {}).get("content")
+            if delta:
+                yield delta
+    finally:
+        close()
 
 
 def _retryable(status: int) -> bool:

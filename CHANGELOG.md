@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] — 2026-06-03
+
+### Fixed
+- Streaming connection lifecycle: the httpx stream/client is now always closed —
+  on non-200 failover, on early client disconnect, and on exhaustion (was leaking
+  sockets/fds on exactly the failover paths streaming exercises).
+- Proxy rejects negative `Content-Length` and caps request bodies at 16 MB.
+- Model names that contain `/` but aren't provider-prefixed now route correctly
+  (e.g. a client sending `openai/gpt-oss-120b` as the model).
+- Response cache key now includes `tool_choice`.
+- 429 cooldown is stamped with a fresh timestamp instead of the request-start time.
+- The Anthropic `/v1/messages` shim no longer 500s on malformed input (bad
+  `max_tokens`/`temperature`, null text blocks).
+- `/dashboard` and `/v1/models` are gated behind the proxy key when one is set.
+- Responses tolerate broken pipes; reasoning models (incl. `gpt-oss`) get token
+  headroom so they don't return empty content.
+
+### Changed
+- Rewrote the README and docs in a plainer style (less emoji, less marketing).
+
 ## [0.8.0] — 2026-06-03
 
 ### Added

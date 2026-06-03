@@ -30,6 +30,8 @@ from .config import resolve_alias
 from .errors import AllProvidersExhausted, BuffetError, NoProvidersConfigured
 from .router import Pool
 
+_MAX_BODY = 16 * 1024 * 1024  # 16 MB cap on request bodies
+
 
 def _model_ids(pool: Pool) -> list[str]:
     ids = ["auto"]
@@ -49,13 +51,16 @@ def make_handler(pool: Pool, api_key: str | None = None):
 
         def _send(self, status: int, payload: dict, headers: dict | None = None) -> None:
             data = json.dumps(payload).encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
-            for key, value in (headers or {}).items():
-                self.send_header(key, str(value))
-            self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                for key, value in (headers or {}).items():
+                    self.send_header(key, str(value))
+                self.end_headers()
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):  # client went away
+                pass
 
         def _error(self, status: int, message: str, code: str = "freellmpool_error") -> None:
             self._send(status, {"error": {"message": message, "type": code}})
@@ -84,6 +89,11 @@ def make_handler(pool: Pool, api_key: str | None = None):
         def _do_get(self) -> None:
             if self.path.rstrip("/") == "/healthz":
                 self._send(200, {"status": "ok"})
+                return
+            # /dashboard and /v1/models leak inventory/usage, so gate them behind
+            # the proxy key when one is configured.
+            if not self._authorized():
+                self._error(401, "invalid or missing API key", "invalid_api_key")
                 return
             if self.path.rstrip("/") in ("/dashboard", "/"):
                 html = _dashboard_html(pool).encode("utf-8")
@@ -120,6 +130,12 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 length = int(self.headers.get("Content-Length", 0) or 0)
             except (TypeError, ValueError):
                 self._error(400, "invalid Content-Length header", "invalid_request_error")
+                return
+            if length < 0:
+                self._error(400, "invalid Content-Length header", "invalid_request_error")
+                return
+            if length > _MAX_BODY:
+                self._error(413, "request body too large", "invalid_request_error")
                 return
             try:
                 raw = self.rfile.read(length) if length else b"{}"
@@ -314,7 +330,9 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):  # pragma: no cover
-                pass
+                pass  # client disconnected
+            finally:
+                gen.close()  # release the upstream stream even on early disconnect
 
         def _handle_responses(self, req: dict) -> None:
             """Minimal OpenAI Responses API (/v1/responses) shim for Codex CLI
@@ -361,13 +379,18 @@ def _parse_model(requested: str, provider_ids: set[str]):
     "auto"                  -> (None, None)        any provider/model
     "groq"                  -> (["groq"], None)    any model on groq
     "groq/llama-3.1-8b"     -> (["groq"], "llama-3.1-8b")
+    "openai/gpt-oss-120b"   -> (None, "openai/gpt-oss-120b")  (openai isn't a provider id;
+                               it's a catalog model name that happens to contain '/')
     "llama-3.3-70b"         -> (None, "llama-3.3-70b")  model on any provider
     """
     if not requested or requested == "auto":
         return None, None
     if "/" in requested:
         provider, _, model = requested.partition("/")
-        return [provider], model
+        # Only treat as provider/model when the prefix is a real provider id —
+        # otherwise it's a bare model name that contains a slash.
+        if provider in provider_ids:
+            return [provider], model
     if requested in provider_ids:
         return [requested], None
     return None, requested
@@ -494,7 +517,7 @@ def _dashboard_html(pool) -> str:
  th{{color:#8a93a2;font-weight:600;font-size:12px}} .num{{text-align:right;font-variant-numeric:tabular-nums}}
  a{{color:#6ea8ff}}
 </style></head><body><div class=wrap>
-<h1>🫗 freellmpool <span style="color:#8a93a2;font-weight:400;font-size:14px">v{__version__}</span></h1>
+<h1>freellmpool <span style="color:#8a93a2;font-weight:400;font-size:14px">v{__version__}</span></h1>
 <div class=sub>{len(pool.providers)} providers configured · today's usage (UTC) · auto-refreshes every 5s</div>
 <div class=cards>{card_html}</div>
 <table><tr><th>provider</th><th>models</th><th class=num>requests today</th></tr>

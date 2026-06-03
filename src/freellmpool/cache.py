@@ -43,7 +43,9 @@ class Cache:
         return sqlite3.connect(self.path, timeout=5)
 
     @staticmethod
-    def make_key(messages, model, providers, max_tokens, temperature, tools) -> str:
+    def make_key(
+        messages, model, providers, max_tokens, temperature, tools, tool_choice=None
+    ) -> str:
         payload = json.dumps(
             {
                 "messages": messages,
@@ -52,6 +54,7 @@ class Cache:
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "tools": tools,
+                "tool_choice": tool_choice,
             },
             sort_keys=True,
             default=str,

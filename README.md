@@ -1,45 +1,31 @@
-# freellmpool — pool every free LLM API into one endpoint
+# freellmpool
 
-**A free, OpenAI-compatible LLM gateway that pools the free tiers of 16 providers (Groq, Cerebras, NVIDIA NIM, Gemini, OpenRouter, GitHub Models, Cloudflare & more) behind one `/v1` endpoint — with automatic failover and quota tracking. Works out of the box with zero API keys.**
+Pool the free tiers of 16 LLM providers behind one OpenAI-compatible endpoint —
+as a CLI, a Python library, or a local proxy. Works with no API keys.
 
 [![PyPI](https://img.shields.io/pypi/v/freellmpool.svg)](https://pypi.org/project/freellmpool/)
 [![CI](https://github.com/0xzr/freellmpool/actions/workflows/ci.yml/badge.svg)](https://github.com/0xzr/freellmpool/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org)
 
-![freellmpool demo](assets/demo.svg)
+![demo](assets/demo.svg)
 
-> One free tier is a toy. **Sixteen, stacked, are tens of thousands of free requests a day.** And unlike a self-hosted gateway, freellmpool is just `pip install` — a CLI, a Python library, *and* a proxy — that works with **no keys, no Docker, no setup**.
+Groq, Cerebras, NVIDIA NIM, Google Gemini, OpenRouter, GitHub Models, Cloudflare,
+Mistral, Cohere and others each give away a free tier — but each has its own SDK,
+rate limits, and daily cap. freellmpool puts them in one pool: it sends each
+request to a provider you have access to, fails over to the next when one is rate
+limited or down, and tracks per-day usage so you get the most out of every tier.
 
-```bash
-pip install freellmpool
-freellmpool ask "Explain the CAP theorem in one sentence."   # ← real answer, zero keys
+Two providers (Pollinations and OVHcloud) need no API key, so a fresh install
+answers immediately:
+
+```console
+$ pip install freellmpool
+$ freellmpool ask "Explain the CAP theorem in one sentence."
+A distributed system can guarantee at most two of consistency, availability, and
+partition tolerance at the same time.
 ```
 
-Groq, Cerebras, NVIDIA NIM, Google Gemini, OpenRouter, GitHub Models, Cloudflare Workers AI, Mistral, Cohere, and more each hand out a generous **free tier** — but each has its own SDK, rate limits, and daily cap. `freellmpool` puts all of them into one pool:
-
-- 🔌 **True drop-in.** Point any OpenAI SDK / tool at `freellmpool` and it just works — `/v1/chat/completions` (real streaming + **tool-calling**), `/v1/embeddings`, a `/v1/responses` shim for **Codex CLI**, and an Anthropic `/v1/messages` shim so even **Claude Code** runs on free models. Common model names (`gpt-4o-mini`, `claude-3-5-sonnet`, …) are **auto-aliased to free models**, so existing code runs unchanged.
-- 📊 **Dashboard + caching.** A `/dashboard` page (usage, cache hits, $ saved) and an opt-in response cache for dev loops.
-- 🟢 **Zero config.** Works with **no API keys at all** — keyless providers are built in. `pip install` → `ask` → done.
-- 🔁 **Automatic failover.** Rate-limited or 5xx on one provider? `freellmpool` transparently rolls to the next, with a cooldown so it stops hammering a throttled pool.
-- 📊 **Quota-aware routing.** Spreads load least-used-first and respects each free daily limit, so you squeeze the most out of every tier.
-- 🤖 **Built for agents.** Streaming (SSE), a Codex/Responses shim, and mid-run failover — exactly where long agent loops usually die.
-- 🧠 **Chat + embeddings.** Pooled free `/v1/embeddings` too (`pool.embed(...)`) — free RAG, not just chat.
-- 🪶 **Tiny.** Pure-Python, one dependency (`httpx`). The proxy runs on the standard library. No keys are ever stored in the repo.
-
-## Use it five ways
-
-| | |
-|---|---|
-| **CLI** | `freellmpool ask "..."` — pipe stdin in, `--json` out |
-| **Library** | `from freellmpool import Pool` — `pool.ask(...)`, `pool.embed(...)` |
-| **Proxy** | `freellmpool proxy` — a drop-in `OPENAI_BASE_URL` for any tool |
-| **`llm` plugin** | `llm install llm-freellmpool` → `llm -m freellmpool "..."` |
-| **MCP server** | `freellmpool mcp` — let **Claude Desktop / Code / Cursor** offload to free models ([docs](docs/MCP.md)) |
-
-It's not a server you have to host with keys you have to manage — it's a client that just works.
-
----
+Add keys for the other providers to unlock more models and higher limits.
 
 ## Install
 
@@ -47,219 +33,134 @@ It's not a server you have to host with keys you have to manage — it's a clien
 pip install freellmpool      # or: pipx install freellmpool
 ```
 
-## Zero-config: it works with no keys at all
+Only dependency is `httpx`. Python 3.11+.
 
-Three providers in the catalog need **no signup** (Pollinations and OVHcloud are keyless; LLM7's key is optional), so this works the moment you install:
-
-```bash
-pip install freellmpool
-freellmpool ask "Explain the CAP theorem in one sentence."
-```
-
-Add provider keys (below) to unlock more models, higher limits, and better failover.
-
-## 60-second quickstart (with keys)
-
-1. Grab one or more free API keys — **all free, no credit card**. You only need
-   **one** to start (Groq and Cerebras are the fastest to sign up for).
-   👉 **[docs/ACCOUNTS.md](docs/ACCOUNTS.md) has 1-minute, click-by-click steps for every provider.**
-
-   | Provider | Get a key |
-   |---|---|
-   | Groq | <https://console.groq.com/keys> |
-   | Cerebras | <https://cloud.cerebras.ai> |
-   | OpenRouter | <https://openrouter.ai/keys> |
-   | Google Gemini | <https://aistudio.google.com/apikey> |
-   | GitHub Models | any GitHub PAT |
-
-2. Export the ones you have (see [`.env.example`](.env.example) for all of them):
-
-   ```bash
-   export GROQ_API_KEY=gsk_...
-   export CEREBRAS_API_KEY=csk-...
-   ```
-
-3. Ask something:
-
-   ```bash
-   freellmpool ask "Explain the CAP theorem in one sentence."
-   ```
-
-   or pipe context in:
-
-   ```bash
-   cat error.log | freellmpool ask "What's the root cause here?"
-   ```
-
-Check what's wired up:
+## Command line
 
 ```bash
-freellmpool providers
+freellmpool ask "Write a haiku about sqlite"
+git diff | freellmpool ask "Write a commit message for this"
+freellmpool providers        # which providers are configured
+freellmpool models           # every provider/model id
 ```
 
-```
-freellmpool catalog: 16 providers, 56 models
-
-  ✓ ovh          OVHcloud AI Endpoints (keyless)  5 models   [configured]
-  ✓ llm7         LLM7 (key optional)           1 models   [configured]
-  · groq         Groq                          6 models   [set GROQ_API_KEY]
-  · cerebras     Cerebras                      4 models   [set CEREBRAS_API_KEY]
-  · nvidia       NVIDIA NIM                    5 models   [set NVIDIA_API_KEY]
-  ...
-```
-
-## Choosing a model or provider
-
-By default freellmpool auto-picks the least-used provider you have. To pin a choice:
+Pin a provider or model; common OpenAI/Anthropic model names are mapped to a free
+equivalent so existing scripts keep working:
 
 ```bash
-freellmpool models                       # list every provider/model id
-freellmpool ask -m groq/llama-3.3-70b-versatile "hi"   # exact provider + model
-freellmpool ask -m llama-3.3-70b-versatile "hi"        # that model on any provider
-freellmpool ask -p cerebras,groq "hi"                  # restrict to these providers
+freellmpool ask -m groq/llama-3.3-70b-versatile "hi"
+freellmpool ask -p cerebras,groq "hi"
+freellmpool ask -m gpt-4o-mini "hi"      # routed to a free model
 ```
 
-Same idea through the proxy via the OpenAI `model` field: `"auto"`, `"groq"`, or `"groq/llama-3.3-70b-versatile"`.
+## As a proxy
 
-### Providers in the box
-
-| Provider | Key env | Notes |
-|---|---|---|
-| Pollinations | — | **keyless**, works out of the box |
-| OVHcloud AI Endpoints | — | **keyless**, works out of the box |
-| LLM7 | `LLM7_API_KEY` | key optional |
-| Groq | `GROQ_API_KEY` | very fast |
-| Cerebras | `CEREBRAS_API_KEY` | very fast, large daily cap |
-| NVIDIA NIM | `NVIDIA_API_KEY` | big model catalog (build.nvidia.com) |
-| OpenRouter | `OPENROUTER_API_KEY` | many `:free` models |
-| Google Gemini | `GEMINI_API_KEY` | generous free tier |
-| GitHub Models | `GITHUB_TOKEN` | any PAT works |
-| Cloudflare Workers AI | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | |
-| Mistral | `MISTRAL_API_KEY` | |
-| Cohere | `COHERE_API_KEY` | |
-| SambaNova | `SAMBANOVA_API_KEY` | |
-| Z.ai / Zhipu GLM | `ZHIPU_API_KEY` | |
-| Ollama Cloud | `OLLAMA_API_KEY` | |
-| LongCat (Meituan) | `LONGCAT_API_KEY` | |
-
-Full signup steps for each: **[docs/ACCOUNTS.md](docs/ACCOUNTS.md)**.
-
-## The killer feature: a drop-in OpenAI proxy
-
-Run the gateway:
+Run a local server that speaks the OpenAI API, then point any OpenAI-compatible
+tool at it:
 
 ```bash
-freellmpool proxy --port 8080
-```
-
-Now point **any** OpenAI-compatible app or SDK at it — no other changes:
-
-```bash
+freellmpool proxy
 export OPENAI_BASE_URL=http://localhost:8080/v1
-export OPENAI_API_KEY=anything        # freellmpool ignores it
+export OPENAI_API_KEY=unused
 ```
 
 ```python
 from openai import OpenAI
-
-client = OpenAI()  # picks up OPENAI_BASE_URL
-resp = client.chat.completions.create(
-    model="auto",                      # or "groq", or "groq/llama-3.3-70b-versatile"
-    messages=[{"role": "user", "content": "Say hi in French."}],
-)
-print(resp.choices[0].message.content)
+client = OpenAI()
+print(client.chat.completions.create(
+    model="auto",
+    messages=[{"role": "user", "content": "hi"}],
+).choices[0].message.content)
 ```
 
-The `model` field controls routing:
-
-| `model` value | Routes to |
-|---|---|
-| `auto` (or omitted) | any configured provider, least-used first |
-| `groq` | any model on Groq |
-| `groq/llama-3.3-70b-versatile` | that exact model |
-| `llama-3.3-70b-versatile` | that model on any provider that has it |
-
-## Use it as the free LLM backend for your AI agent
-
-Coding agents and agent frameworks (aider, Continue, Cline, the OpenAI Agents SDK, LangChain, ...) almost all speak the OpenAI API — so they can run on pooled free inference through `freellmpool`, with **failover when one provider rate-limits you mid-run** (exactly when long agent loops tend to die):
+The proxy also implements the OpenAI Responses API (for the Codex CLI) and the
+Anthropic Messages API (for Claude Code), so coding agents can run on free models
+too. `freellmpool code <agent>` prints the exact setup:
 
 ```bash
-freellmpool proxy --port 8080
-export OPENAI_BASE_URL=http://localhost:8080/v1 OPENAI_API_KEY=anything
-aider --model openai/auto          # or point any OpenAI-compatible tool here
+freellmpool code aider       # also: claude, codex, cline, continue, cursor, opencode
 ```
 
-The proxy does **real token-by-token streaming** (`stream: true`) and tool/function-calling, so streaming chat UIs and tool-using agent loops work too.
+Endpoints: `/v1/chat/completions` (token streaming, tool calling), `/v1/embeddings`,
+`/v1/responses`, `/v1/messages`, `/v1/models`, and a `/dashboard` page showing usage.
+Setup snippets for specific tools are in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)
+and [docs/AGENTS.md](docs/AGENTS.md).
 
-## Works with your tools
-
-> ⚡ **One-command setup:** `freellmpool code claude` (or `codex` / `aider` / `cline` / `continue` / `cursor` / `opencode`) prints exactly how to wire that coding agent to free models — yes, **Claude Code on free models** via the Anthropic shim.
-
-Anything that accepts a custom OpenAI base URL drops straight in — copy-paste configs in **[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)**:
-
-**[Claude Code](docs/AGENTS.md#claude-code)** · **[opencode](docs/INTEGRATIONS.md#opencode)** · **[aider](docs/INTEGRATIONS.md#aider)** · **[Continue](docs/INTEGRATIONS.md#continue-vs-code--jetbrains)** · **[Cline / Roo](docs/INTEGRATIONS.md#cline--roo-code)** · **[Cursor / Windsurf](docs/INTEGRATIONS.md#cursor--windsurf)** · **[Codex CLI](docs/AGENTS.md#openai-codex-cli)** · **[Open WebUI](docs/INTEGRATIONS.md#open-webui)** · **[LibreChat](docs/INTEGRATIONS.md#librechat)** · **[LangChain](docs/INTEGRATIONS.md#langchain)** · **[LlamaIndex](docs/INTEGRATIONS.md#llamaindex)** · **[Vercel AI SDK](docs/INTEGRATIONS.md#vercel-ai-sdk)** · **[llm CLI](docs/INTEGRATIONS.md#simon-willisons-llm)** · **[shell-gpt](docs/INTEGRATIONS.md#shell-gpt-sgpt)** · **[n8n](docs/INTEGRATIONS.md#n8n)**
-
-## Use it as a library
+## As a library
 
 ```python
 from freellmpool import Pool
 
 pool = Pool.from_default_config()
 reply = pool.ask("Summarize the plot of Hamlet in 20 words.")
-print(reply.text)
-print(f"served by {reply.provider_id}/{reply.model}")
+print(reply.text, "—", reply.provider_id)
 
-# Pooled free embeddings too — free RAG in a couple lines:
-vecs = pool.embed(["first document", "second document"]).vectors
+vectors = pool.embed(["first document", "second document"]).vectors
 ```
 
-## Correct by design
+## As an MCP server
 
-freellmpool aims to be a *faithful* OpenAI drop-in, so agents and SDKs don't trip over edge cases:
+`freellmpool mcp` runs a Model Context Protocol server over stdio, so Claude
+Desktop, Claude Code, or Cursor can hand subtasks to free models. See
+[docs/MCP.md](docs/MCP.md).
 
-- **Fails over on errors** (incl. provider tool-call errors) instead of returning a hard `400`.
-- **Accepts assistant messages with empty/null content** + `tool_calls` (doesn't reject them).
-- **Respects each provider's own per-day free limit** in its quota tracking, not a single global guess.
-- **Skips a rate-limited provider's other models** for that request, with a cooldown so it stops hammering a throttled pool.
+## Provider keys
+
+freellmpool reads keys from the environment and uses whatever is set. None are
+required. Step-by-step signup links for each (all free, no card) are in
+[docs/ACCOUNTS.md](docs/ACCOUNTS.md).
+
+| Provider | Env var | Notes |
+|---|---|---|
+| Pollinations | — | no key needed |
+| OVHcloud | — | no key needed (anonymous tier) |
+| LLM7 | `LLM7_API_KEY` | optional |
+| Groq | `GROQ_API_KEY` | fast |
+| Cerebras | `CEREBRAS_API_KEY` | fast, large daily cap |
+| NVIDIA NIM | `NVIDIA_API_KEY` | |
+| OpenRouter | `OPENROUTER_API_KEY` | free models |
+| Google Gemini | `GEMINI_API_KEY` | |
+| GitHub Models | `GITHUB_TOKEN` | any PAT |
+| Cloudflare | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | |
+| Mistral, Cohere, SambaNova, Z.ai, Ollama Cloud, LongCat | see `.env.example` | |
+
+A `config.toml` (see [config.toml.example](config.toml.example)) can hold keys,
+model aliases, and settings instead of env vars.
 
 ## How routing works
 
-For each request `freellmpool` builds the list of `(provider, model)` candidates you have keys for, orders them **least-used-today first** (providers already over their free daily hint sink to the bottom), then tries them in order until one returns a non-empty completion. Every success is recorded to a small per-day counter at `~/.config/freellmpool/quota.json` (reset at UTC midnight). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full picture.
+For each request, freellmpool builds the list of `(provider, model)` pairs you
+have access to, orders them least-used-first (so load spreads across tiers), and
+tries them in order until one returns a non-empty result. A provider that returns
+a 429 is set aside for a cooldown window. Daily counts are kept in
+`~/.config/freellmpool/quota.json` and reset at UTC midnight.
 
-## Adding or overriding providers
+Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-The built-in catalog lives in [`src/freellmpool/providers.toml`](src/freellmpool/providers.toml). To add a provider or override a model list without forking, drop a `providers.toml` at `~/.config/freellmpool/providers.toml` (or point `FREELLMPOOL_CONFIG` at one). Same-`id` entries override the built-ins; new ids are appended. See [CONTRIBUTING.md](CONTRIBUTING.md) for the (small) anatomy of a provider.
+## Limitations
 
-## Comparison
+- Free-tier models are smaller than frontier models. They're good for drafting,
+  summarizing, classification, triage, and everyday coding — not a replacement
+  for GPT-class reasoning on hard problems.
+- Quality and capacity vary through the day as high-cap tiers exhaust; limits
+  reset at UTC midnight.
+- Free tiers change without notice. When a model id or limit goes stale, a
+  one-line PR to `providers.toml` fixes it for everyone.
+- The proxy is meant for local/single-user use. It binds to `127.0.0.1` by
+  default; if you expose it, set a key (`--api-key`).
+- The Claude Code / Anthropic path is experimental (text and tool use; no vision).
+- These are free tiers shared by everyone — don't abuse them.
 
-| | freellmpool | Calling each SDK by hand | A paid gateway |
-|---|---|---|---|
-| Free tiers pooled | ✅ 16 providers | ⚠️ you wire each one | ❌ |
-| Automatic failover | ✅ | ❌ | ✅ |
-| Quota tracking | ✅ per-day | ❌ | varies |
-| Drop-in OpenAI proxy | ✅ | ❌ | ✅ |
-| Cost | $0 | $0 | 💸 |
-| Dependencies | 1 (`httpx`) | many | a service |
+## Contributing
 
-## Limitations (read this)
+New providers and fixes to stale limits are the most useful contributions, and
+both are usually a small change to `providers.toml`. See
+[CONTRIBUTING.md](CONTRIBUTING.md). Tests run with no network access:
 
-`freellmpool` is honest about what it is — a way to pool **free tiers**, not a frontier-model service:
-
-- **No GPT-5 / Claude-Opus-class reasoning.** Free tiers are smaller/faster models — great for triage, drafting, classification, tool-routing, and everyday coding; reach for a frontier model for the hardest reasoning.
-- **Quality and capacity vary through the day** as high-cap pools exhaust; daily limits reset at UTC midnight.
-- **Free tiers change without notice.** Endpoints, model ids, and limits drift — that's what the one-line `providers.toml` PRs are for.
-- **Local-first, single-user.** The proxy defaults to `127.0.0.1`; if you bind it to a network interface, set a proxy key (`--api-key`). Not meant as a multi-tenant production gateway.
-- **Respect the providers.** This pools *free* tiers for personal projects and experimentation — don't abuse them, or we all lose them.
-
-## Status
-
-`freellmpool` is `0.3` and moving fast. Provider endpoints and free-tier limits drift — if something breaks, please [open an issue](https://github.com/0xzr/freellmpool/issues) or send a one-line PR to `providers.toml`. Contributions of new free providers are especially welcome.
-
-## Found this useful?
-
-⭐ **Star the repo** — it's the single biggest thing that helps others discover freellmpool, and it keeps the free-provider catalog maintained. New free providers and one-line limit fixes are always welcome ([CONTRIBUTING.md](CONTRIBUTING.md)).
+```bash
+pip install -e ".[dev]" && pytest && ruff check src tests
+```
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
-
+MIT

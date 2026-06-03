@@ -20,9 +20,25 @@ def _flatten_text(blocks) -> str:
         return blocks
     if isinstance(blocks, list):
         return "".join(
-            b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text"
+            str(b.get("text") or "")
+            for b in blocks
+            if isinstance(b, dict) and b.get("type") == "text"
         )
     return ""
+
+
+def _safe_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def request_to_chat(body: dict) -> dict:
@@ -52,7 +68,7 @@ def request_to_chat(body: dict) -> dict:
                 continue
             t = b.get("type")
             if t == "text":
-                text_parts.append(b.get("text", ""))
+                text_parts.append(str(b.get("text") or ""))
             elif t == "tool_use":
                 tool_calls.append(
                     {
@@ -104,8 +120,8 @@ def request_to_chat(body: dict) -> dict:
         "messages": messages,
         "tools": tools,
         "tool_choice": _tool_choice(body.get("tool_choice")),
-        "max_tokens": int(body.get("max_tokens") or 1024),
-        "temperature": float(body.get("temperature", 0.0) or 0.0),
+        "max_tokens": _safe_int(body.get("max_tokens"), 1024),
+        "temperature": _safe_float(body.get("temperature"), 0.0),
         "model": body.get("model", "auto"),
     }
 

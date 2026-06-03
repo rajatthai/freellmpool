@@ -17,7 +17,7 @@ shell or put it in a `.env` file (copy [`.env.example`](../.env.example)).
 
 ---
 
-## ⭐ Start here (fastest, most generous)
+## Start here (fastest to sign up for)
 
 ### Groq — *~1 min, no card*
 1. Go to <https://console.groq.com/keys> and sign in with Google/GitHub.

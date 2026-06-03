@@ -268,3 +268,30 @@ def test_parse_model():
     assert _parse_model("groq", ids) == (["groq"], None)
     assert _parse_model("groq/llama-3.1-8b", ids) == (["groq"], "llama-3.1-8b")
     assert _parse_model("llama-3.3-70b", ids) == (None, "llama-3.3-70b")
+    # catalog model names with '/' whose prefix isn't a provider id stay whole
+    assert _parse_model("openai/gpt-oss-120b", ids) == (None, "openai/gpt-oss-120b")
+    assert _parse_model("qwen/qwen3-coder:free", ids) == (None, "qwen/qwen3-coder:free")
+
+
+def test_get_routes_gated_by_key(providers, env, quota):
+    from freellmpool.proxy import serve
+
+    pool = Pool(providers, quota=quota, env=env, post=make_post({}))
+    httpd = serve(pool, host="127.0.0.1", port=0, api_key="secret")
+    t = threading.Thread(target=httpd.serve_forever, daemon=True)
+    t.start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        for path in ("/dashboard", "/v1/models"):
+            req = urllib.request.Request(base + path)
+            try:
+                urllib.request.urlopen(req)  # noqa: S310
+                raise AssertionError(f"{path} should require auth")
+            except urllib.error.HTTPError as e:
+                assert e.code == 401
+        # healthz stays open
+        with urllib.request.urlopen(base + "/healthz") as r:  # noqa: S310
+            assert r.status == 200
+    finally:
+        httpd.shutdown()
+        httpd.server_close()

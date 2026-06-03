@@ -100,6 +100,25 @@ def test_reply_to_sse_sequence():
     assert types[-1] == "event: message_stop"
 
 
+def test_request_to_chat_robust_to_malformed():
+    # hostile/odd inputs must not raise (would 500 a thread)
+    body = {
+        "model": "claude-3-5-sonnet",
+        "max_tokens": "lots",  # not a number
+        "temperature": "hot",
+        "messages": [
+            {"role": "user", "content": [{"type": "text", "text": None}]},  # null text
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "x", "content": None}],
+            },
+        ],
+    }
+    chat = request_to_chat(body)
+    assert chat["max_tokens"] == 1024  # fell back to default
+    assert chat["temperature"] == 0.0
+
+
 def test_estimate_tokens():
     assert estimate_tokens({"messages": [{"role": "user", "content": "x" * 40}]}) >= 1
 

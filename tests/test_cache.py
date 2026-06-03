@@ -19,6 +19,13 @@ def test_cache_get_put_and_ttl(tmp_path):
     assert c.get(key) is None
 
 
+def test_make_key_includes_tool_choice():
+    args = ([{"role": "user", "content": "hi"}], None, None, 1024, 0.0, [{"type": "function"}])
+    k_auto = Cache.make_key(*args, "auto")
+    k_req = Cache.make_key(*args, "required")
+    assert k_auto != k_req  # different tool_choice → different cache entry
+
+
 def test_pool_uses_cache(providers, env, quota, tmp_path):
     cache = Cache(ttl=999.0, path=tmp_path / "c.db")
     post = make_post({})  # returns "ok", counts calls
