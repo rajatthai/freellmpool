@@ -140,6 +140,33 @@ def cmd_models(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_benchmark(args: argparse.Namespace) -> int:
+    from .benchmark import benchmark, render_table
+
+    pool = Pool.from_default_config()
+    if not pool.providers:
+        print(
+            "freellmpool: no providers configured; set at least one API key "
+            "(see .env.example) before benchmarking.",
+            file=sys.stderr,
+        )
+        return 3
+    provider_filter = args.providers.split(",") if args.providers else None
+    print(
+        f"Benchmarking {len(pool.providers)} providers "
+        f"(one model each{', pinned' if args.model else ''})...",
+        file=sys.stderr,
+    )
+    rows = benchmark(
+        pool,
+        model=args.model,
+        providers=provider_filter,
+        timeout=args.timeout,
+    )
+    print(render_table(rows))
+    return 0
+
+
 def cmd_quota(args: argparse.Namespace) -> int:
     store = QuotaStore()
     snap = store.snapshot()
@@ -275,6 +302,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_quota = sub.add_parser("quota", help="show today's per-provider usage")
     p_quota.set_defaults(func=cmd_quota)
 
+    p_bench = sub.add_parser(
+        "benchmark", help="time each configured provider and report latency / success"
+    )
+    p_bench.add_argument("-m", "--model", help="pin one model name to test on every provider")
+    p_bench.add_argument("-p", "--providers", help="comma-separated provider ids to test")
+    p_bench.add_argument("--timeout", type=float, default=30.0, help="per-call timeout seconds")
+    p_bench.set_defaults(func=cmd_benchmark)
+
     p_proxy = sub.add_parser("proxy", help="run the OpenAI-compatible proxy server")
     p_proxy.add_argument("--host", default="127.0.0.1")
     p_proxy.add_argument("--port", type=int, default=8080)
@@ -300,6 +335,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from .observe import configure_logging_from_env
+
+    configure_logging_from_env()  # honor FREELLMPOOL_LOG=<level> for the CLI/proxy
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)

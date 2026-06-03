@@ -44,7 +44,7 @@ def _model_ids(pool: Pool) -> list[str]:
 
 def make_handler(pool: Pool, api_key: str | None = None):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "freellmpool/0.9"
+        server_version = "freellmpool/0.10"
 
         # quiet by default; the server prints its own concise log line
         def log_message(self, format, *args):  # noqa: A002
@@ -495,6 +495,28 @@ def _dashboard_html(pool) -> str:
         )
     provider_rows = "\n".join(rows) or "<tr><td colspan=3>no providers configured</td></tr>"
 
+    # Measured latency / success, if any calls have been timed this run.
+    metrics_snap = pool.metrics.snapshot() if getattr(pool, "metrics", None) else {}
+    measured = sorted(
+        ((k, v) for k, v in metrics_snap.items() if v.ewma_ms is not None),
+        key=lambda kv: kv[1].ewma_ms,
+    )[:8]
+    if measured:
+        mrows = "\n".join(
+            f"<tr><td>{_html.escape(k)}</td>"
+            f"<td class=num>{v.ewma_ms:,.0f} ms</td>"
+            f"<td class=num>{v.success_rate * 100:.0f}%</td></tr>"
+            for k, v in measured
+        )
+        metrics_table = (
+            "<h2 style='font-size:14px;color:#8a93a2;margin:24px 0 8px'>measured latency "
+            "(fastest first)</h2>"
+            "<table><tr><th>provider/model</th><th class=num>latency</th>"
+            f"<th class=num>success</th></tr>{mrows}</table>"
+        )
+    else:
+        metrics_table = ""
+
     cards = [
         ("requests served", str(s.get("requests", 0))),
         ("cache hits", str(s.get("cache_hits", 0))),
@@ -523,6 +545,7 @@ def _dashboard_html(pool) -> str:
 <div class=cards>{card_html}</div>
 <table><tr><th>provider</th><th>models</th><th class=num>requests today</th></tr>
 {provider_rows}</table>
+{metrics_table}
 <p class=sub style="margin-top:20px">OpenAI endpoint: <code>/v1</code> · <a href="https://github.com/0xzr/freellmpool">github.com/0xzr/freellmpool</a></p>
 </div></body></html>"""
 

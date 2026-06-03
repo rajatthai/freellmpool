@@ -10,17 +10,34 @@ Public API:
 """
 
 from .errors import AllProvidersExhausted, BuffetError, NoProvidersConfigured
+from .metrics import Metrics
 from .models import EmbedReply, Model, Provider, Reply
+from .plugins import register_adapter, register_provider
 from .router import Pool
 
-__version__ = "0.9.3"
+__version__ = "0.10.0"
+
+
+def __getattr__(name: str):
+    # Lazy so importing freellmpool never imports the async stack (httpx.AsyncClient)
+    # unless someone actually asks for AsyncPool.
+    if name == "AsyncPool":
+        from .aio import AsyncPool
+
+        return AsyncPool
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "Pool",
+    "AsyncPool",
     "Provider",
     "Model",
     "Reply",
     "EmbedReply",
+    "Metrics",
+    "register_provider",
+    "register_adapter",
     "BuffetError",
     "NoProvidersConfigured",
     "AllProvidersExhausted",

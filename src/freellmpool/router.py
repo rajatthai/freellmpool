@@ -26,8 +26,25 @@ from .config import (
     settings,
 )
 from .errors import AllProvidersExhausted, NoProvidersConfigured, ProviderHTTPError
+from .metrics import Metrics
 from .models import EmbedReply, Provider, Reply
+from .observe import EventHook, emit
 from .quota import QuotaStore
+
+
+def _is_health_failure(exc: Exception) -> bool:
+    """Whether an exception reflects provider *availability* (so it should count
+    against the target's health metrics) vs a client/capability error that says
+    nothing about whether the provider is up.
+
+    429 / 408 / 5xx and raw network errors are availability failures. Other 4xx
+    (400 bad request, 401/403 auth, 402 payment/capability, 404 unknown model,
+    and the gemini "tools unsupported" 400) are not — counting them would let a
+    tool request poison routing for later non-tool traffic.
+    """
+    if isinstance(exc, ProviderHTTPError):
+        return exc.status in (429, 408) or exc.status >= 500
+    return True  # connection error, timeout, etc.
 
 
 @dataclass(frozen=True)
@@ -56,6 +73,9 @@ class Pool:
         embedders: list[Provider] | None = None,
         stream_post: StreamPostFn = default_stream_post,
         cache: Cache | None = None,
+        metrics: Metrics | None = None,
+        routing: str = "fair",
+        on_event: EventHook | None = None,
     ):
         self.providers = providers
         self.embedders = embedders or []
@@ -66,11 +86,23 @@ class Pool:
         self._cache = cache
         self.cooldown_seconds = cooldown_seconds
         self._clock = clock or time.monotonic
+        self.metrics = metrics or Metrics()
+        # "fair"  — least-used-first (spread load), failing targets sink to the back.
+        # "fast"  — lowest measured latency / failure penalty first, then least-used.
+        self.routing = routing if routing in ("fair", "fast") else "fair"
+        self._on_event = on_event
         # provider_id -> monotonic time until which to deprioritize after a 429
         self._cooldown_until: dict[str, float] = {}
         self._cooldown_lock = threading.Lock()
         # cumulative usage for the "$ saved vs OpenAI" metric
         self.stats = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0, "cache_hits": 0}
+        self._stats_lock = threading.Lock()  # the proxy serves requests on many threads
+
+    def _bump_stats(self, **deltas: int) -> None:
+        """Thread-safe read-modify-write of the cumulative stats counters."""
+        with self._stats_lock:
+            for key, delta in deltas.items():
+                self.stats[key] = self.stats.get(key, 0) + delta
 
     def _mark_cooldown(self, provider_id: str, now: float) -> None:
         until = now + self.cooldown_seconds
@@ -92,15 +124,26 @@ class Pool:
         env: dict[str, str] | None = None,
         quota: QuotaStore | None = None,
         post: PostFn = default_post,
+        on_event: EventHook | None = None,
     ) -> Pool:
+        from .plugins import registered_providers  # lazy: avoids import cycle
+
         # Merge config.toml [keys] underneath the real environment.
         env = effective_env(env)
-        providers = configured_providers(load_catalog(), env)
+        # Merge plugin providers by id (a plugin reusing a built-in id overrides
+        # it, same as user-catalog overrides) — never two providers with one id,
+        # which would split quota/metrics/cooldown.
+        by_id = {p.id: p for p in load_catalog()}
+        for p in registered_providers():
+            by_id[p.id] = p
+        catalog = list(by_id.values())
+        providers = configured_providers(catalog, env)
         embedders = configured_embedders(load_embedders(), env)
         cfg = settings(env)
         cooldown = float(cfg.get("cooldown_seconds", 60.0))
         ttl = float(env.get("FREELLMPOOL_CACHE_TTL") or cfg.get("cache_ttl", 0) or 0)
         cache = Cache(ttl) if ttl > 0 else None
+        routing = str(env.get("FREELLMPOOL_ROUTING") or cfg.get("routing", "fair")).lower()
         return cls(
             providers,
             quota=quota,
@@ -109,6 +152,8 @@ class Pool:
             cooldown_seconds=cooldown,
             embedders=embedders,
             cache=cache,
+            routing=routing,
+            on_event=on_event,
         )
 
     def embed(
@@ -171,21 +216,39 @@ class Pool:
         return targets
 
     def _order(self, targets: list[Target]) -> list[Target]:
-        """Least-used-first ordering, so load spreads across free tiers.
+        """Order candidate targets for failover.
 
-        Targets already over their daily budget hint are pushed to the back
-        (they may still be tried if everything else fails).
+        ``fair`` (default): least-used-first, so load spreads across free tiers.
+        Targets over their daily budget hint, or measured to be currently failing,
+        sink to the back (still tried if everything else fails).
+
+        ``fast``: lowest measured latency / failure penalty first (then least-used).
+        Targets with no measurements yet are treated as neutral so they still get
+        sampled. Either way the ordering is a hint — failover still reaches all.
         """
 
         # One snapshot instead of a locked read per target (matters for large catalogs).
         snap = self.quota.snapshot()
+        metrics = self.metrics
 
-        def sort_key(t: Target) -> tuple[int, int]:
-            used = int(snap.get(f"{t.provider.id}::{t.model}", 0))
-            over = 1 if (t.rpd > 0 and used >= t.rpd) else 0
-            return (over, used)
+        def used_of(t: Target) -> int:
+            return int(snap.get(f"{t.provider.id}::{t.model}", 0))
 
-        return sorted(targets, key=sort_key)
+        def over_of(t: Target) -> int:
+            return 1 if (t.rpd > 0 and used_of(t) >= t.rpd) else 0
+
+        if self.routing == "fast":
+
+            def fast_key(t: Target) -> tuple[int, float, int]:
+                return (over_of(t), metrics.score(t.name), used_of(t))
+
+            return sorted(targets, key=fast_key)
+
+        def fair_key(t: Target) -> tuple[int, int, int]:
+            # over-budget, then known-failing, then least-used.
+            return (over_of(t), 1 if metrics.failing(t.name) else 0, used_of(t))
+
+        return sorted(targets, key=fair_key)
 
     # ---- the main entrypoint ------------------------------------------
 
@@ -249,7 +312,7 @@ class Pool:
             )
             hit = self._cache.get(cache_key)
             if hit is not None:
-                self.stats["cache_hits"] += 1
+                self._bump_stats(cache_hits=1)
                 return Reply(
                     text=hit.get("text", ""),
                     provider_id=hit.get("provider_id", "cache"),
@@ -266,11 +329,12 @@ class Pool:
             raise NoProvidersConfigured("no candidate (provider, model) matched the given filters")
 
         # Providers recently rate-limited (429) are tried last, not skipped — so
-        # a transient cooldown never makes a request fail outright.
+        # a transient cooldown never makes a request fail outright. Read each
+        # target's cooldown state exactly once so a concurrent 429 can't place the
+        # same target in both buckets.
         now = self._clock()
-        available = [t for t in targets if not self._cooled(t.provider.id, now)]
-        cooled = [t for t in targets if self._cooled(t.provider.id, now)]
-        sequence = available + cooled
+        states = [(t, self._cooled(t.provider.id, now)) for t in targets]
+        sequence = [t for t, c in states if not c] + [t for t, c in states if c]
 
         attempts: list[tuple[str, str]] = []
         rate_limited: set[str] = set()  # providers that 429'd during THIS request
@@ -283,6 +347,8 @@ class Pool:
             if api_key is None and not target.provider.keyless:  # pragma: no cover
                 attempts.append((target.name, "missing api key"))
                 continue
+            emit(self._on_event, "attempt", target=target.name, n=len(attempts) + 1)
+            started = self._clock()
             try:
                 reply = _client.call(
                     target.provider,
@@ -301,22 +367,41 @@ class Pool:
                 if exc.status == 429:
                     self._mark_cooldown(target.provider.id, self._clock())
                     rate_limited.add(target.provider.id)
+                    emit(self._on_event, "cooldown", target=target.name, status=429)
+                if _is_health_failure(exc):
+                    self.metrics.record_failure(target.name, str(exc))
+                emit(self._on_event, "error", target=target.name, reason=str(exc))
                 attempts.append((target.name, str(exc)))
                 continue
             except Exception as exc:  # network error, etc. — try the next one
+                self.metrics.record_failure(target.name, f"{type(exc).__name__}: {exc}")
+                emit(self._on_event, "error", target=target.name, reason=f"{type(exc).__name__}")
                 attempts.append((target.name, f"{type(exc).__name__}: {exc}"))
                 continue
 
             has_tool_calls = bool(reply.message and reply.message.get("tool_calls"))
             if not reply.text and not has_tool_calls:
+                self.metrics.record_failure(target.name, "empty completion")
+                emit(self._on_event, "error", target=target.name, reason="empty completion")
                 attempts.append((target.name, "empty completion"))
                 continue
 
+            latency_ms = max(0.0, (self._clock() - started) * 1000.0)
+            self.metrics.record_success(target.name, latency_ms)
+            emit(
+                self._on_event,
+                "success",
+                target=target.name,
+                latency_ms=round(latency_ms, 1),
+                attempts=len(attempts) + 1,
+            )
             self.quota.record(target.provider.id, target.model)
             reply.attempts = len(attempts) + 1
-            self.stats["requests"] += 1
-            self.stats["prompt_tokens"] += reply.prompt_tokens or 0
-            self.stats["completion_tokens"] += reply.completion_tokens or 0
+            self._bump_stats(
+                requests=1,
+                prompt_tokens=reply.prompt_tokens or 0,
+                completion_tokens=reply.completion_tokens or 0,
+            )
             if self._cache is not None and cache_key is not None:
                 self._cache.put(
                     cache_key,
@@ -331,6 +416,7 @@ class Pool:
                 )
             return reply
 
+        emit(self._on_event, "exhausted", attempts=len(attempts))
         raise AllProvidersExhausted(attempts)
 
     def stream_chat(
@@ -358,16 +444,18 @@ class Pool:
             raise NoProvidersConfigured("no streamable (provider, model) matched the filters")
 
         now = self._clock()
-        available = [t for t in targets if not self._cooled(t.provider.id, now)]
-        cooled = [t for t in targets if self._cooled(t.provider.id, now)]
+        states = [(t, self._cooled(t.provider.id, now)) for t in targets]
+        sequence = [t for t, c in states if not c] + [t for t, c in states if c]
         attempts: list[tuple[str, str]] = []
         rate_limited: set[str] = set()
-        for target in available + cooled:
+        for target in sequence:
             if target.provider.id in rate_limited:
                 continue
             api_key = target.provider.api_key(self.env)
             if api_key is None and not target.provider.keyless:
                 continue
+            emit(self._on_event, "attempt", target=target.name, stream=True)
+            started = self._clock()
             gen = _client.stream_call(
                 target.provider,
                 target.model,
@@ -382,23 +470,42 @@ class Pool:
             try:
                 first = next(gen)  # triggers connection + status check
             except StopIteration:
+                self.metrics.record_failure(target.name, "empty stream")
+                emit(self._on_event, "error", target=target.name, reason="empty stream")
                 attempts.append((target.name, "empty stream"))
                 continue
             except ProviderHTTPError as exc:
                 if exc.status == 429:
                     self._mark_cooldown(target.provider.id, self._clock())
                     rate_limited.add(target.provider.id)
+                    emit(self._on_event, "cooldown", target=target.name, status=429)
+                if _is_health_failure(exc):
+                    self.metrics.record_failure(target.name, str(exc))
+                emit(self._on_event, "error", target=target.name, reason=str(exc))
                 attempts.append((target.name, str(exc)))
                 continue
             except Exception as exc:  # noqa: BLE001
+                self.metrics.record_failure(target.name, f"{type(exc).__name__}: {exc}")
+                emit(self._on_event, "error", target=target.name, reason=f"{type(exc).__name__}")
                 attempts.append((target.name, f"{type(exc).__name__}: {exc}"))
                 continue
 
+            # First byte arrived — count it a success (latency to first token).
+            latency_ms = max(0.0, (self._clock() - started) * 1000.0)
+            self.metrics.record_success(target.name, latency_ms)
+            emit(
+                self._on_event,
+                "success",
+                target=target.name,
+                latency_ms=round(latency_ms, 1),
+                stream=True,
+            )
             self.quota.record(target.provider.id, target.model)
-            self.stats["requests"] += 1
+            self._bump_stats(requests=1)
             yield {"provider": target.provider.id, "model": target.model}
             yield first
             yield from gen
             return
 
+        emit(self._on_event, "exhausted", attempts=len(attempts))
         raise AllProvidersExhausted(attempts)

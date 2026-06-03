@@ -95,6 +95,7 @@ def test_think_tags_stripped():
 
 # ---- streaming connection lifecycle (the real _StreamLines.close path) ----
 
+
 class _SpyLines:
     """A closeable line iterator that records whether close() was called."""
 
@@ -121,7 +122,9 @@ def test_stream_call_closes_on_non_200():
     def stream_post(url, headers, body, timeout):
         return 500, spy
 
-    gen = C.stream_call(P, "m", [{"role": "user", "content": "hi"}], api_key="k", env={}, stream_post=stream_post)
+    gen = C.stream_call(
+        P, "m", [{"role": "user", "content": "hi"}], api_key="k", env={}, stream_post=stream_post
+    )
     with pytest.raises(ProviderHTTPError):
         next(gen)  # status check happens on first iteration
     assert spy.closed is True  # connection released before the error propagated
@@ -133,7 +136,9 @@ def test_stream_call_closes_on_early_break():
     def stream_post(url, headers, body, timeout):
         return 200, spy
 
-    gen = C.stream_call(P, "m", [{"role": "user", "content": "hi"}], api_key="k", env={}, stream_post=stream_post)
+    gen = C.stream_call(
+        P, "m", [{"role": "user", "content": "hi"}], api_key="k", env={}, stream_post=stream_post
+    )
     assert next(gen) == "a"
     gen.close()  # consumer abandons the stream early
     assert spy.closed is True  # try/finally released the connection
@@ -146,13 +151,21 @@ def test_stream_call_closes_on_exhaustion():
         return 200, spy
 
     out = list(
-        C.stream_call(P, "m", [{"role": "user", "content": "hi"}], api_key="k", env={}, stream_post=stream_post)
+        C.stream_call(
+            P,
+            "m",
+            [{"role": "user", "content": "hi"}],
+            api_key="k",
+            env={},
+            stream_post=stream_post,
+        )
     )
     assert out == ["x", "y"]
     assert spy.closed is True
 
 
 # ---- connection pooling plumbing (no network) ----
+
 
 def test_shared_client_is_singleton():
     assert C._client() is C._client()  # one pooled client reused across calls

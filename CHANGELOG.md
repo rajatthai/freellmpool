@@ -4,6 +4,50 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] — 2026-06-03
+
+### Added
+- **Async API.** `from freellmpool import AsyncPool` — `await pool.aask(...)` /
+  `await pool.achat(...)` over `httpx.AsyncClient`, with the same failover,
+  cooldown, quota, and metrics as the sync `Pool`. Use it as an async context
+  manager (`async with AsyncPool.from_default_config() as pool:`). Imported lazily
+  so the sync path never pulls in the async stack.
+- **Per-provider metrics + metrics-aware routing.** Every call records latency
+  (EWMA) and success/failure per `provider/model`. Default `fair` routing now
+  sinks a currently-failing target to the back; opt into `fast` routing
+  (`FREELLMPOOL_ROUTING=fast` or `routing="fast"`) to prefer the lowest measured
+  latency. The dashboard shows a "measured latency" table.
+- **`freellmpool benchmark`** — times one call per configured provider
+  concurrently and prints a latency/success table (and warms the routing
+  metrics). `-m` to pin a model, `-p` to filter providers.
+- **Observability hooks.** Pass `on_event=...` to `Pool`/`AsyncPool` to receive
+  structured event dicts (`attempt`/`success`/`error`/`cooldown`/`exhausted`) for
+  tracing/metrics. Set `FREELLMPOOL_LOG=info|debug` to log them from the CLI/proxy.
+  The library never configures logging handlers itself.
+- **Plugin system.** `register_provider(...)` adds a custom endpoint to the
+  routing catalog; `register_adapter(name, fn)` teaches the client a new request
+  shape. Providers can also be contributed via a `freellmpool.providers` entry
+  point (discovered lazily; a broken plugin is skipped, never fatal).
+
+### Hardening (post-review)
+From a Codex adversarial review of the above:
+- Client/capability errors (4xx other than 408/429 — bad request, auth, 402
+  payment, unknown model, gemini "tools unsupported") no longer count against a
+  target's health metrics; only availability failures (429/5xx/network) do, so a
+  tool request can't poison routing for later non-tool traffic.
+- `AsyncPool` now routes plugin-registered adapters through the adapter registry
+  (via a worker thread), matching the sync `Pool`, and applies the response cache
+  on the async path.
+- The async `httpx.AsyncClient` is created under an async lock and rebound per
+  event loop (no leaked clients on concurrent first calls or reuse across
+  `asyncio.run`).
+- Stats counters update under a lock (the proxy is multi-threaded); each target's
+  cooldown state is read once per request so a concurrent 429 can't
+  double-schedule it; plugin providers merge by id; entry-point loading is locked
+  so no reader sees a partial list.
+- `fast` routing no longer prefers an unmeasured provider over a measured-fast one
+  (unknown targets get a neutral baseline: behind healthy, ahead of failing).
+
 ## [0.9.3] — 2026-06-03
 
 ### Fixed

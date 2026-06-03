@@ -99,6 +99,36 @@ print(reply.text, "—", reply.provider_id)
 vectors = pool.embed(["first document", "second document"]).vectors
 ```
 
+Async is the same API with `await`:
+
+```python
+from freellmpool import AsyncPool
+
+async with AsyncPool.from_default_config() as pool:
+    reply = await pool.aask("Summarize the plot of Hamlet in 20 words.")
+```
+
+Pass `on_event=...` to either pool to receive structured routing events
+(`attempt`/`success`/`error`/`cooldown`/`exhausted`) for logging or tracing. Add
+your own endpoint with `register_provider(...)`, or a new request shape with
+`register_adapter(name, fn)`.
+
+## Benchmark your providers
+
+`freellmpool benchmark` times one call per configured provider and prints
+latency and success, so you can see which of your free tiers are fastest right
+now. The router learns the same latency/success signal from real traffic as it
+runs; set `FREELLMPOOL_ROUTING=fast` to prefer the lowest-latency provider
+instead of the default least-used-first.
+
+```
+$ freellmpool benchmark
+  provider/model            status   latency  note
+  cerebras/llama-3.3-70b    ok        180 ms  6 tok
+  groq/llama-3.3-70b        ok        240 ms  6 tok
+  ovh/Meta-Llama-3_3-70B    FAIL           -  HTTP 429
+```
+
 ## As an MCP server
 
 `freellmpool mcp` runs a Model Context Protocol server over stdio, so Claude
@@ -135,6 +165,11 @@ have access to, orders them least-used-first (so load spreads across tiers), and
 tries them in order until one returns a non-empty result. A provider that returns
 a 429 is set aside for a cooldown window. Daily counts are kept in
 `~/.config/freellmpool/quota.json` and reset at UTC midnight.
+
+Every call records latency and success per provider. A provider that is currently
+failing sinks to the back automatically; with `FREELLMPOOL_ROUTING=fast` the
+fastest measured provider goes first instead. `freellmpool benchmark` warms these
+metrics on demand.
 
 Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

@@ -64,7 +64,7 @@ from collections.abc import Iterable, Iterator  # noqa: E402
 
 StreamPostFn = Callable[[str, dict, dict, float], "tuple[int, Iterable[str]]"]
 
-_USER_AGENT = "freellmpool/0.9 (+https://github.com/0xzr/freellmpool)"
+_USER_AGENT = "freellmpool/0.10 (+https://github.com/0xzr/freellmpool)"
 
 _CONNECT_TIMEOUT = 10.0  # fail fast on dead/unreachable providers so failover is quick
 _shared = None  # one pooled, keep-alive httpx.Client shared across calls/threads
@@ -235,6 +235,83 @@ def _to_gemini_contents(messages: list[Message]) -> tuple[dict | None, list[dict
     return system_instruction, contents
 
 
+def _adapter_openai(
+    provider,
+    model,
+    messages,
+    *,
+    api_key,
+    env,
+    max_tokens,
+    temperature,
+    timeout,
+    tools,
+    tool_choice,
+    post,
+) -> Reply:
+    return _call_openai(
+        provider,
+        model,
+        messages,
+        api_key=api_key,
+        env=env,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        timeout=timeout,
+        tools=tools,
+        tool_choice=tool_choice,
+        post=post,
+    )
+
+
+def _adapter_gemini(
+    provider,
+    model,
+    messages,
+    *,
+    api_key,
+    env,
+    max_tokens,
+    temperature,
+    timeout,
+    tools,
+    tool_choice,
+    post,
+) -> Reply:
+    # Gemini uses a different tool schema; skip tools for now (the router will
+    # fail over to an openai-shape provider that supports them).
+    if tools:
+        raise ProviderHTTPError(400, "gemini adapter does not support tools", retryable=True)
+    return _call_gemini(
+        provider,
+        model,
+        messages,
+        api_key=api_key,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        timeout=timeout,
+        post=post,
+    )
+
+
+# Built-in request/response shapes. Plugins can register more via
+# freellmpool.plugins.register_adapter; an unknown adapter name falls back to openai.
+_BUILTIN_ADAPTERS = {
+    "openai": _adapter_openai,
+    "cloudflare": _adapter_openai,  # OpenAI-compatible once {account_id} is filled
+    "gemini": _adapter_gemini,
+}
+
+
+def _resolve_adapter(name: str):
+    from .plugins import registered_adapters  # lazy: avoids import cycle
+
+    custom = registered_adapters()
+    if name in custom:
+        return custom[name]
+    return _BUILTIN_ADAPTERS.get(name, _adapter_openai)
+
+
 def call(
     provider: Provider,
     model: str,
@@ -251,29 +328,15 @@ def call(
 ) -> Reply:
     """Dispatch one completion to ``provider`` and normalize the response.
 
-    Raises :class:`ProviderHTTPError` on a non-200 status.
+    Routes through the adapter named by ``provider.adapter`` (built-in or
+    plugin-registered). Raises :class:`ProviderHTTPError` on a non-200 status.
     """
     if _is_thinking(model) and max_tokens < _THINKING_FLOOR:
         # Give reasoning models room so hidden reasoning doesn't eat the whole
         # budget and return empty content.
         max_tokens = _THINKING_FLOOR
-    if provider.adapter == "gemini":
-        # Gemini uses a different tool schema; skip tools for now (the router
-        # will fail over to an openai-shape provider that supports them).
-        if tools:
-            raise ProviderHTTPError(400, "gemini adapter does not support tools", retryable=True)
-        return _call_gemini(
-            provider,
-            model,
-            messages,
-            api_key=api_key,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            timeout=timeout,
-            post=post,
-        )
-    # openai + cloudflare share the chat/completions shape.
-    return _call_openai(
+    adapter = _resolve_adapter(provider.adapter)
+    return adapter(
         provider,
         model,
         messages,
