@@ -3,11 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Free Cerebras API — use Cerebras' fast free tier (and pool it)</title>
-<meta name="description" content="How to use the free Cerebras inference API: get a free key, the OpenAI-compatible endpoint, free models (gpt-oss-120b, GLM 4.7), its large daily request cap, and how to pool Cerebras with other free LLM tiers using freellmpool.">
+<title>Free Cerebras API guide — fastest inference, big daily cap, pooling</title>
+<meta name="description" content="A practical guide to Cerebras' free inference API: wafer-scale speed, one of the largest free daily request caps, the free models (gpt-oss-120b, GLM 4.7), how to get a key, limits, and how to pool Cerebras with other free tiers.">
 <link rel="canonical" href="https://0xzr.github.io/freellmpool/free-cerebras-api.html">
-<meta property="og:title" content="Free Cerebras API — fast free inference">
-<meta property="og:type" content="article">
+<meta property="og:title" content="Free Cerebras API guide"><meta property="og:type" content="article">
 <style>
  :root{--bg:#0b0e14;--fg:#e6e6e6;--mut:#8a93a2;--card:#141925;--bd:#232a39;--ac:#6ea8ff}
  *{box-sizing:border-box}body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;margin:0;background:var(--bg);color:var(--fg);line-height:1.65}
@@ -19,41 +18,66 @@
 </style>
 </head>
 <body><div class="wrap">
-<p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> › providers</p>
-<h1>Free Cerebras API</h1>
+<p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> › providers › Cerebras</p>
+<h1>Free Cerebras API: speed plus a big free cap</h1>
 
-<p class="lead"><strong>Cerebras offers a free inference API with one of the largest daily request caps
-among free tiers (roughly ~14,400 requests/day; verify current limits) and very fast generation. Get a free
-key at <a href="https://cloud.cerebras.ai/">cloud.cerebras.ai</a>; the endpoint is OpenAI-compatible at
-<code>https://api.cerebras.ai/v1</code> with free models like gpt-oss-120b and GLM 4.7. Pool it with other
-free tiers using <a href="https://github.com/0xzr/freellmpool">freellmpool</a> for failover when you hit a
-limit.</strong></p>
+<p class="lead"><strong>Cerebras runs inference on its wafer-scale engine, giving some of the highest
+tokens-per-second available — and unusually for a free tier, it pairs that speed with one of the largest
+free daily request allowances (on the order of ~14,400 requests/day; verify current numbers). That
+combination makes Cerebras an excellent <em>primary</em> free provider. Get a key free at
+<a href="https://cloud.cerebras.ai/">cloud.cerebras.ai</a> and call the OpenAI-compatible endpoint at
+<code>https://api.cerebras.ai/v1</code>. Use <a href="https://github.com/0xzr/freellmpool">freellmpool</a>
+to fall back to other tiers when you do exhaust it.</strong></p>
 
-<h2>Use Cerebras' free API directly</h2>
+<h2>What Cerebras' free tier is good for</h2>
+<p>Pick Cerebras when you want both throughput and volume: batch jobs, evaluations, agent loops, and any
+workload that makes thousands of calls a day. Its catalog is smaller than NVIDIA's, so it's about doing a
+lot with a few strong models rather than browsing many. If you need a specific niche model, pair Cerebras
+with a broad provider.</p>
+
+<h2>Free models</h2>
+<ul>
+<li><code>gpt-oss-120b</code> — strong open reasoning model, served fast.</li>
+<li><code>zai-glm-4.7</code> — capable general model (GLM family).</li>
+</ul>
+
+<h2>Get a key and call it</h2>
 <pre><code>curl https://api.cerebras.ai/v1/chat/completions \
   -H "Authorization: Bearer $CEREBRAS_API_KEY" -H "Content-Type: application/json" \
   -d '{"model":"gpt-oss-120b","messages":[{"role":"user","content":"Hi"}]}'</code></pre>
-<p>Free models: <code>gpt-oss-120b</code>, <code>zai-glm-4.7</code>.</p>
+
+<h2>Limits and gotchas</h2>
+<ul>
+<li>The large daily cap is the draw, but there are still per-minute request and token limits — sustained
+bursts can hit the minute cap even when the daily budget is fine.</li>
+<li>The model list is intentionally small; don't expect dozens of variants.</li>
+<li>gpt-oss is a reasoning model — give it enough <code>max_tokens</code> so hidden reasoning doesn't eat
+the whole budget and return empty content.</li>
+</ul>
 
 <h2>Pool Cerebras with other free tiers</h2>
-<p>Cerebras' high daily cap makes it a great primary, with others as backup. freellmpool routes to Cerebras
-first when you prefer it and fails over to Groq, Gemini, NVIDIA and the rest when needed:</p>
+<p>Because of its capacity, Cerebras is a good default primary in a pool, with Groq, Gemini and NVIDIA as
+backups. freellmpool can prefer Cerebras and fail over only when needed, and its <code>benchmark</code>
+command times each provider so routing picks the fastest:</p>
 <pre><code>pip install freellmpool
-export CEREBRAS_API_KEY=...       # plus other free keys
-freellmpool ask -p cerebras "Refactor this function" &lt; code.py
-freellmpool benchmark             # time each provider so routing prefers the fastest</code></pre>
-<p>See <a href="best-free-llm-api-gateway.html">best free LLM API gateway</a> and
+export CEREBRAS_API_KEY=...              # plus other free keys
+freellmpool ask -p cerebras "..."        # pin Cerebras as primary
+freellmpool benchmark                    # time each provider you've configured</code></pre>
+<p>See also <a href="free-groq-api.html">Groq</a> (the other fast tier),
+<a href="best-free-llm-api-gateway.html">best free LLM API gateway</a>, and
 <a href="use-multiple-free-llm-apis.html">using multiple free LLM APIs together</a>.</p>
 
 <h2>FAQ</h2>
 <h3>Is the Cerebras API free?</h3>
-<p>Yes. Cerebras has a free inference tier with a comparatively large daily request cap (around ~14,400
-requests/day; verify current limits). Get a key at cloud.cerebras.ai and call the OpenAI-compatible endpoint
-at api.cerebras.ai/v1.</p>
-<h3>What's special about Cerebras' free tier?</h3>
-<p>Two things: a large daily request allowance relative to other free tiers, and very fast token
-generation. It's a strong default to pool as a primary provider with freellmpool.</p>
+<p>Yes. Get a key at cloud.cerebras.ai and call the OpenAI-compatible endpoint at api.cerebras.ai/v1. The
+free tier has a comparatively large daily request cap (~14,400/day; verify current limits) plus per-minute
+limits.</p>
+<h3>Is Cerebras faster than Groq?</h3>
+<p>Both are very fast and often trade the top spot depending on model and load. The practical answer is to
+run <code>freellmpool benchmark</code> and let routing prefer whichever is fastest for you right now.</p>
+<h3>Why use Cerebras as a primary provider?</h3>
+<p>Its mix of high speed and a large daily request allowance means you can route most traffic to it before
+needing to fall back to other free tiers.</p>
 
-<p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, free, open source). Limits are approximate and change — check Cerebras' docs. Updated 2026-06-03.</p>
-</div>
-</body></html>
+<p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, open source). Limits change — check Cerebras' docs. Updated 2026-06-03.</p>
+</div></body></html>

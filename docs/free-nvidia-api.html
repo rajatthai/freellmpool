@@ -3,11 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Free NVIDIA NIM API — use build.nvidia.com free models (and pool them)</title>
-<meta name="description" content="How to use NVIDIA's free NIM API: get a free key from build.nvidia.com, the OpenAI-compatible endpoint, the wide model catalog (Llama 3.3 70B, Nemotron, Kimi K2), and how to pool NVIDIA with other free LLM tiers using freellmpool.">
+<title>Free NVIDIA NIM API guide — build.nvidia.com, model variety, pooling</title>
+<meta name="description" content="A practical guide to NVIDIA's free NIM API on build.nvidia.com: the very wide free model catalog (Llama, Nemotron, Kimi, Qwen, Mistral), how to get a key, the OpenAI-compatible endpoint, credit-based limits, and how to pool NVIDIA with other free tiers.">
 <link rel="canonical" href="https://0xzr.github.io/freellmpool/free-nvidia-api.html">
-<meta property="og:title" content="Free NVIDIA NIM API — free models on build.nvidia.com">
-<meta property="og:type" content="article">
+<meta property="og:title" content="Free NVIDIA NIM API guide"><meta property="og:type" content="article">
 <style>
  :root{--bg:#0b0e14;--fg:#e6e6e6;--mut:#8a93a2;--card:#141925;--bd:#232a39;--ac:#6ea8ff}
  *{box-sizing:border-box}body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;margin:0;background:var(--bg);color:var(--fg);line-height:1.65}
@@ -19,41 +18,67 @@
 </style>
 </head>
 <body><div class="wrap">
-<p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> › providers</p>
-<h1>Free NVIDIA NIM API</h1>
+<p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> › providers › NVIDIA</p>
+<h1>Free NVIDIA NIM API: the variety one</h1>
 
-<p class="lead"><strong>NVIDIA's build.nvidia.com gives free API access to a wide catalog of models via
-NIM. Get a free key at <a href="https://build.nvidia.com/">build.nvidia.com</a>; the endpoint is
-OpenAI-compatible at <code>https://integrate.api.nvidia.com/v1</code> and covers dozens of free models
-including Llama 3.3 70B, NVIDIA Nemotron, Kimi K2, and Mistral Small. Free usage is rate-limited via credits.
-Pool NVIDIA with other free tiers using <a href="https://github.com/0xzr/freellmpool">freellmpool</a> for
-failover and combined capacity.</strong></p>
+<p class="lead"><strong>NVIDIA's build.nvidia.com is the free tier to use when you want to try lots of
+different models from one key. Its NIM catalog spans dozens of free models — Llama 3.3 70B, the NVIDIA
+Nemotron family, Moonshot's Kimi, Qwen, Mistral Small and more — all behind one OpenAI-compatible endpoint
+at <code>https://integrate.api.nvidia.com/v1</code>. Get a key free at
+<a href="https://build.nvidia.com/">build.nvidia.com</a>. Free usage is metered by credits, so NVIDIA is
+best as a breadth provider in a pool rather than a high-volume primary — which is exactly what
+<a href="https://github.com/0xzr/freellmpool">freellmpool</a> makes easy.</strong></p>
 
-<h2>Use NVIDIA's free API directly</h2>
+<h2>What NVIDIA's free tier is good for</h2>
+<p>Model evaluation and variety. If you want to compare Nemotron against Llama against Kimi without creating
+a separate account for each, build.nvidia.com gives you all of them from one key. It's less about raw daily
+volume (credits run down) and more about access to a broad shelf — including some models you won't easily
+find free elsewhere.</p>
+
+<h2>A few of the free models</h2>
+<ul>
+<li><code>meta/llama-3.3-70b-instruct</code> — strong general Llama.</li>
+<li><code>nvidia/nemotron-3-super-120b-a12b</code> — NVIDIA's own reasoning-tuned model.</li>
+<li><code>moonshotai/kimi-k2.6</code> — large MoE, good at agentic tasks.</li>
+<li><code>mistralai/mistral-small-4-119b-2603</code> — capable Mistral variant.</li>
+</ul>
+<p>The full free list runs to dozens of models; list them with <code>freellmpool models -p nvidia</code>.</p>
+
+<h2>Get a key and call it</h2>
 <pre><code>curl https://integrate.api.nvidia.com/v1/chat/completions \
   -H "Authorization: Bearer $NVIDIA_API_KEY" -H "Content-Type: application/json" \
   -d '{"model":"meta/llama-3.3-70b-instruct","messages":[{"role":"user","content":"Hi"}]}'</code></pre>
-<p>A few of the free models: <code>meta/llama-3.3-70b-instruct</code>, <code>moonshotai/kimi-k2.6</code>,
-<code>nvidia/nemotron-3-super-120b-a12b</code>, <code>mistralai/mistral-small-4-119b-2603</code> — dozens
-in total.</p>
+
+<h2>Limits and gotchas</h2>
+<ul>
+<li>Free access is credit-metered rather than a flat daily request count, so heavy use depletes faster than
+on Cerebras or Groq.</li>
+<li>The catalog churns — models are added and retired; pin IDs you depend on and expect occasional changes.</li>
+<li>Model IDs are namespaced by vendor (e.g. <code>meta/</code>, <code>nvidia/</code>,
+<code>mistralai/</code>) — copy them exactly.</li>
+</ul>
 
 <h2>Pool NVIDIA with other free tiers</h2>
-<p>NVIDIA's breadth pairs well with faster tiers like Groq and Cerebras. freellmpool lets you use them
-together and fail over automatically:</p>
+<p>The natural setup: NVIDIA for breadth and the occasional niche model, with faster/higher-volume tiers
+(Cerebras, Groq) carrying the bulk of traffic. freellmpool lets you pin NVIDIA when you want a specific
+model and pool everything otherwise:</p>
 <pre><code>pip install freellmpool
-export NVIDIA_API_KEY=...         # plus other free keys
-freellmpool models -p nvidia      # list NVIDIA's free models
-freellmpool ask "..."             # pool + fail over</code></pre>
-<p>See <a href="use-multiple-free-llm-apis.html">using multiple free LLM APIs together</a>.</p>
+export NVIDIA_API_KEY=...                # plus other free keys
+freellmpool models -p nvidia            # browse NVIDIA's free catalog
+freellmpool ask -m nvidia/nemotron-3-super-120b-a12b "..."   # pin a specific model</code></pre>
+<p>See also <a href="free-llm-api-providers-list.html">the full providers list</a> and
+<a href="use-multiple-free-llm-apis.html">using multiple free LLM APIs together</a>.</p>
 
 <h2>FAQ</h2>
 <h3>Is the NVIDIA NIM API free?</h3>
-<p>Yes. build.nvidia.com offers free API access (rate-limited via credits) to a large catalog of models.
-Create a key at build.nvidia.com and call the OpenAI-compatible endpoint at integrate.api.nvidia.com/v1.</p>
-<h3>What models can I use free on NVIDIA?</h3>
-<p>The free catalog is broad — Llama 3.3 70B, NVIDIA Nemotron family, Kimi K2, Mistral Small and many more,
-all through one OpenAI-compatible endpoint.</p>
+<p>Yes. build.nvidia.com offers free, credit-metered access to a large model catalog via an
+OpenAI-compatible endpoint at integrate.api.nvidia.com/v1. Create a key at build.nvidia.com.</p>
+<h3>Why use NVIDIA's free tier?</h3>
+<p>Breadth — dozens of models (Llama, Nemotron, Kimi, Qwen, Mistral and more) from a single key, ideal for
+trying and comparing models without many signups.</p>
+<h3>What's the catch with NVIDIA's free tier?</h3>
+<p>It's metered by credits rather than a flat daily request cap, so high-volume use depletes faster than on
+a request-capped tier like Cerebras.</p>
 
-<p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, free, open source). Limits are approximate and change — check NVIDIA's docs. Updated 2026-06-03.</p>
-</div>
-</body></html>
+<p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, open source). Catalog and limits change — check NVIDIA's docs. Updated 2026-06-03.</p>
+</div></body></html>
