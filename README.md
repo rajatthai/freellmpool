@@ -205,6 +205,41 @@ Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - The Claude Code / Anthropic path is experimental (text and tool use; no vision).
 - These are free tiers shared by everyone — don't abuse them.
 
+## How it compares
+
+| Tool | What it is | Install | Keyless start | CLI / library / proxy / MCP |
+|---|---|---|---|---|
+| **freellmpool** | Pools many providers' **free tiers** | `pip install` | Yes (2 providers) | All four |
+| OpenRouter | Hosted paid aggregator (some free models) | API key | No | API only |
+| LiteLLM | Multi-provider SDK/proxy (bring your own keys) | `pip install` | No | Library + proxy |
+| Self-hosted free-API servers | A server you deploy | Docker + config | No | Server only |
+
+freellmpool's niche is the **keyless, pip-installable client** for squeezing the
+hosted free tiers — not a server you deploy, and not a paid aggregator.
+
+## FAQ
+
+**Is there a free, OpenAI-compatible LLM API gateway?** Yes — freellmpool is a free,
+MIT-licensed gateway that exposes one OpenAI-compatible endpoint backed by the free
+tiers of 16 providers. `pip install freellmpool` and point any OpenAI client at the
+local proxy.
+
+**How do I use multiple free LLM APIs at once?** freellmpool pools them: each request
+goes to a provider you have access to, fails over to the next when one is rate-limited
+or down, and tracks per-day usage so load spreads across tiers.
+
+**Can I run Claude Code or Codex on free models?** Yes — the proxy speaks both the
+OpenAI and Anthropic APIs. Set `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` to the proxy
+and run Codex, Claude Code, aider, Cline, Continue, or Cursor unchanged. See
+`freellmpool code <agent>`. (Claude Code path is experimental: text + tools, no vision.)
+
+**Do I need an API key?** No — Pollinations and OVHcloud work with no key, so a fresh
+install answers immediately. Add free keys for the other providers for more models and
+higher limits.
+
+**Is it free and open source?** Yes, MIT-licensed. More at the
+[project page](https://0xzr.github.io/freellmpool/).
+
 ## Contributing
 
 New providers and fixes to stale limits are the most useful contributions, and
