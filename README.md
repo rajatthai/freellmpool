@@ -26,7 +26,7 @@ Groq, Cerebras, NVIDIA NIM, Google Gemini, OpenRouter, GitHub Models, Cloudflare
 - 🧠 **Chat + embeddings.** Pooled free `/v1/embeddings` too (`pool.embed(...)`) — free RAG, not just chat.
 - 🪶 **Tiny.** Pure-Python, one dependency (`httpx`). The proxy runs on the standard library. No keys are ever stored in the repo.
 
-## Use it four ways
+## Use it five ways
 
 | | |
 |---|---|
@@ -34,6 +34,7 @@ Groq, Cerebras, NVIDIA NIM, Google Gemini, OpenRouter, GitHub Models, Cloudflare
 | **Library** | `from freellmpool import Pool` — `pool.ask(...)`, `pool.embed(...)` |
 | **Proxy** | `freellmpool proxy` — a drop-in `OPENAI_BASE_URL` for any tool |
 | **`llm` plugin** | `llm install llm-freellmpool` → `llm -m freellmpool "..."` |
+| **MCP server** | `freellmpool mcp` — let **Claude Desktop / Code / Cursor** offload to free models ([docs](docs/MCP.md)) |
 
 It's not a server you have to host with keys you have to manage — it's a client that just works.
 

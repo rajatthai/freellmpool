@@ -198,6 +198,22 @@ def cmd_proxy(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mcp(args: argparse.Namespace) -> int:
+    from .mcp_server import serve_stdio  # lazy import
+
+    pool = Pool.from_default_config()
+    print(
+        f"freellmpool MCP server (stdio) — {len(pool.providers)} providers ready. "
+        "Add to your MCP client config; see docs/MCP.md.",
+        file=sys.stderr,
+    )
+    try:
+        serve_stdio(pool, version=__version__)
+    except (KeyboardInterrupt, BrokenPipeError):
+        pass
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="freellmpool",
@@ -243,6 +259,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="require this Bearer token on requests (or set FREELLMPOOL_PROXY_KEY)",
     )
     p_proxy.set_defaults(func=cmd_proxy)
+
+    p_mcp = sub.add_parser(
+        "mcp", help="run an MCP server (stdio) so MCP clients can use free models"
+    )
+    p_mcp.set_defaults(func=cmd_mcp)
 
     return parser
 

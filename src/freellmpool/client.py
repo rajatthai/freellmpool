@@ -57,7 +57,7 @@ class HTTPResult:
 
 PostFn = Callable[[str, dict, dict, float], HTTPResult]
 
-_USER_AGENT = "freellmpool/0.5 (+https://github.com/0xzr/freellmpool)"
+_USER_AGENT = "freellmpool/0.6 (+https://github.com/0xzr/freellmpool)"
 
 
 def default_post(url: str, headers: dict, json_body: dict, timeout: float) -> HTTPResult:

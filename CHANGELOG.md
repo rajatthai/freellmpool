@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] — 2026-06-03
+
+### Added
+- **MCP server** — `freellmpool mcp` runs a Model Context Protocol server over
+  stdio (zero extra deps), so **Claude Desktop / Claude Code / Cursor** can
+  offload subtasks to free models. Tools: `free_llm_ask`, `free_llm_models`.
+  Works with no API keys. See [docs/MCP.md](docs/MCP.md). Live-verified end to end.
+
 ## [0.5.0] — 2026-06-03
 
 ### Added
