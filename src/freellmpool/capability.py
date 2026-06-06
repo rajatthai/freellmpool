@@ -24,8 +24,10 @@ import os
 import re
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
+from types import MappingProxyType
 
 from .context import estimate_input_tokens
 
@@ -165,16 +167,16 @@ def _read_scores(path: Path) -> dict[str, float]:
 
 
 @lru_cache(maxsize=8)
-def _table_cached(user_str: str, _user_mtime: int) -> dict[str, float]:
+def _table_cached(user_str: str, _user_mtime: int) -> Mapping[str, float]:
     # Bundle first, user cache overlays it. ``_user_mtime`` is part of the cache
     # key only (not used in the body) so a `capability sync` is picked up without a
-    # restart. Treat the result as read-only (it is shared across callers).
+    # restart. Returned read-only (MappingProxyType) since it is shared across callers.
     table = _read_scores(_BUNDLED_SCORES)
     table.update(_read_scores(Path(user_str)))
-    return table
+    return MappingProxyType(table)
 
 
-def capability_table() -> dict[str, float]:
+def capability_table() -> Mapping[str, float]:
     """Resolved ``{normalized_name: score}`` (bundled overlaid by the user cache).
 
     Cached and mtime-aware, so it is cheap to call once per routing decision.
@@ -187,7 +189,7 @@ def capability_table() -> dict[str, float]:
     return _table_cached(str(user), mtime)
 
 
-def model_capability(name: str, table: dict[str, float] | None = None) -> float:
+def model_capability(name: str, table: Mapping[str, float] | None = None) -> float:
     """Capability of a model on 0–1: benchmark score if known, else name heuristic.
 
     Pass ``table`` (from :func:`capability_table`) to avoid reloading it per call
@@ -336,8 +338,10 @@ def build_capability_table(
     highest-precedence source wins first; failing that, a *same-family, same-size*
     approximation is borrowed (tagged ``…~``). Models nothing covers are omitted —
     they get the name heuristic at runtime. The ``*_scores`` args are raw benchmark
-    dicts (model name → raw number); each is min-max normalized independently.
-    Precedence follows measured correlation with AA (Arena ≈ 0.73 > Aider ≈ 0.60).
+    dicts (model name → raw number); each is percentile-rank normalized independently
+    (see :func:`normalize_scores`), which makes scores from different benchmarks
+    roughly comparable. Precedence follows measured correlation with AA (Arena ≈ 0.73
+    > Aider ≈ 0.60).
     """
     from .config import load_catalog
 
@@ -352,13 +356,24 @@ def build_capability_table(
         _index_source("arena", arena),
         _index_source("aider", aider),
     ]
+    families = set().union(*(r["families"] for r in resolvers))
+
+    # Stems shared by ≥2 distinct *sized* catalog names (e.g. llama-3.1-8b and
+    # llama-3.1-405b both strip to "llama3.1"). The sized→unsized match must not be
+    # used for these, or both sizes would get one (wrong) score.
+    stem_keys: dict[str, set[str]] = {}
+    for name in catalog_names:
+        key = normalize_model_name(name)
+        if key and _largest_params(key) is not None:
+            stem_keys.setdefault(_alnum(_strip_params(key)), set()).add(key)
+    ambiguous_stems = {stem for stem, keys in stem_keys.items() if len(keys) > 1}
 
     table: dict[str, dict] = {}
     for name in catalog_names:
         key = normalize_model_name(name)
         if not key or key in table:
             continue
-        entry = _resolve_capability(key, resolvers)
+        entry = _resolve_capability(key, resolvers, families, ambiguous_stems)
         if entry is not None:
             table[key] = entry
     return table
@@ -378,36 +393,59 @@ def _largest_params(key: str) -> float | None:
     return max(params) if params else None
 
 
+def _leading_family(key: str) -> str:
+    """The leading alpha run of a normalized key (the model family), e.g.
+    ``llama-3.1-8b`` → ``llama``. Empty if shorter than 4 chars."""
+    m = re.match(r"[a-z]+", key)
+    fam = m.group(0) if m else ""
+    return fam if len(fam) >= 4 else ""
+
+
 def _index_source(label: str, norm_scores: dict[str, float]) -> dict:
     """Precompute the lookup indexes for one benchmark source:
     exact-by-name, alphanumeric-core, paramless-core (only entries without a size
-    token, for matching a sized catalog name to an unsized benchmark name), and a
-    (family-token, params) index for same-family/same-size approximation."""
+    token, for matching a sized catalog name to an unsized benchmark name), a
+    (family, params) index for same-family/same-size approximation, and the set of
+    known leading-family tokens (so approximation can't latch onto a stray word)."""
     core: dict[str, float] = {}
     noparam_core: dict[str, float] = {}
     fp: dict[tuple[str, float], float] = {}
+    families: set[str] = set()
     for key, value in norm_scores.items():
         ck = _alnum(key)
         if ck:
             core[ck] = max(core.get(ck, 0.0), value)
+        fam = _leading_family(key)
+        if fam:
+            families.add(fam)
         params = _largest_params(key)
         if params is None:
             if ck:
                 noparam_core[ck] = max(noparam_core.get(ck, 0.0), value)
-        else:
-            for tok in re.findall(r"[a-z]+", key):
-                if len(tok) >= 4:
-                    fp[(tok, params)] = max(fp.get((tok, params), 0.0), value)
-    return {"label": label, "exact": norm_scores, "core": core, "noparam": noparam_core, "fp": fp}
+        elif fam:
+            # Index approximation only under the benchmark entry's own family token.
+            fp[(fam, params)] = max(fp.get((fam, params), 0.0), value)
+    return {
+        "label": label,
+        "exact": norm_scores,
+        "core": core,
+        "noparam": noparam_core,
+        "fp": fp,
+        "families": families,
+    }
 
 
-def _resolve_capability(key: str, resolvers: list[dict]) -> dict | None:
-    """Resolve one normalized model key against ordered resolvers (AA, then Arena).
+def _resolve_capability(
+    key: str, resolvers: list[dict], families: set[str], ambiguous_stems: set[str]
+) -> dict | None:
+    """Resolve one normalized model key against ordered resolvers (AA → Arena → Aider).
 
     Tries, in order: exact name, alphanumeric core, then a sized→unsized core match
-    (so ``mistral-large-3-675b`` finds ``mistral-large-3``). A *direct* match from
-    any source beats a *family+size approximation* from any source — a measured
-    number always wins over a borrowed one. Approximations are tagged ``…~``."""
+    (so ``mistral-large-3-675b`` finds ``mistral-large-3`` — skipped when the stem is
+    shared by multiple catalog sizes, which would conflate them). A *direct* match
+    from any source beats a *same-family/same-size approximation* (tagged ``…~``),
+    and approximation only fires on a token that is a known benchmark family — never
+    a stray word — so an unrelated name can't borrow a family's score."""
     core = _alnum(key)
     np_core = _alnum(_strip_params(key))
     has_params = np_core != core
@@ -416,11 +454,11 @@ def _resolve_capability(key: str, resolvers: list[dict]) -> dict | None:
             return {"score": r["exact"][key], "source": r["label"]}
         if core in r["core"]:
             return {"score": r["core"][core], "source": r["label"]}
-        if has_params and np_core and np_core in r["noparam"]:
+        if has_params and np_core and np_core not in ambiguous_stems and np_core in r["noparam"]:
             return {"score": r["noparam"][np_core], "source": r["label"]}
     params = _largest_params(key)
     if params is not None:
-        tokens = [t for t in re.findall(r"[a-z]+", key) if len(t) >= 4]
+        tokens = [t for t in re.findall(r"[a-z]+", key) if len(t) >= 4 and t in families]
         for r in resolvers:
             for tok in tokens:
                 if (tok, params) in r["fp"]:
@@ -445,6 +483,9 @@ AIDER_URLS = (
     "https://raw.githubusercontent.com/Aider-AI/aider/main/aider/website/_data/edit_leaderboard.yml",
 )
 _MAX_FETCH_BYTES = 8 * 1024 * 1024
+# The AA key may only ever be sent to AA's own host (a misconfigured URL must not
+# leak the secret to a third party).
+_AA_ALLOWED_HOSTS = frozenset({"artificialanalysis.ai", "www.artificialanalysis.ai"})
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -535,8 +576,13 @@ def fetch_aa_scores(
 
     Requires the caller's own AA API key (so AA-licensed data is only ever fetched
     under the user's access, never bundled). Best-effort: tolerates schema drift by
-    scanning common field names; returns {} on any failure.
+    scanning common field names; returns {} on any failure. The key is only ever
+    sent to an AA host (a misconfigured ``url`` cannot leak it elsewhere).
     """
+    from urllib.parse import urlsplit
+
+    if urlsplit(url).hostname not in _AA_ALLOWED_HOSTS:
+        raise ValueError(f"refusing to send the AA key to a non-AA host: {url!r}")
     try:
         data = _get_json(url, timeout=timeout, headers={"x-api-key": api_key})
     except (OSError, ValueError, urllib.error.HTTPError):
@@ -575,6 +621,15 @@ def sync_capability_table(
     arena = fetch_arena_scores(timeout=timeout)
     aider = fetch_aider_scores(timeout=timeout)
     aa = fetch_aa_scores(api_key=aa_api_key, url=aa_url, timeout=timeout) if aa_api_key else {}
+    if aa:
+        # AA data must never be written into the packaged bundle (its terms forbid
+        # redistribution) — only into a user cache outside the package tree.
+        package_dir = Path(__file__).resolve().parent
+        if package_dir == path.resolve().parent or package_dir in path.resolve().parents:
+            raise ValueError(
+                f"refusing to write Artificial Analysis data into the package dir: {path}. "
+                "AA scores may only be cached outside the installed package."
+            )
     table = build_capability_table(aa_scores=aa, arena_scores=arena, aider_scores=aider)
     by_source: dict[str, int] = {}
     for entry in table.values():

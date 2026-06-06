@@ -2,7 +2,7 @@
   "meta": {
     "aider_models": 158,
     "arena_models": 218,
-    "mapped": 93,
+    "mapped": 92,
     "sources": "LMArena Elo (mathewhe/chatbot-arena-elo, MIT) + Aider leaderboard (Apache-2.0); percentile-rank; ~ = same-family/size approximation"
   },
   "scores": {
@@ -19,8 +19,8 @@
       "source": "aider"
     },
     "codestral-22b-instruct-v0.1": {
-      "score": 0.3906,
-      "source": "arena~"
+      "score": 0.3308,
+      "source": "aider~"
     },
     "command-a": {
       "score": 0.8203,
@@ -53,10 +53,6 @@
     "deepseek-v3": {
       "score": 0.9453,
       "source": "arena"
-    },
-    "devstral-small-2-24b": {
-      "score": 0.6224,
-      "source": "arena~"
     },
     "dolphin-mistral-24b-venice-edition": {
       "score": 0.6224,
@@ -267,7 +263,7 @@
       "source": "arena"
     },
     "mistral-7b-instruct-v0.3": {
-      "score": 0.2292,
+      "score": 0.2214,
       "source": "arena~"
     },
     "mistral-large": {

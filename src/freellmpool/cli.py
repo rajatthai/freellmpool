@@ -563,7 +563,7 @@ def cmd_capability_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def _in_table(name: str, table: dict) -> bool:
+def _in_table(name: str, table) -> bool:
     from .capability import normalize_model_name
 
     return normalize_model_name(name) in table
