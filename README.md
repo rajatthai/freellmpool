@@ -40,6 +40,17 @@ freellmpool code claude                 # prints the one-line setup for Claude C
 # (also: codex, aider, cline, continue, cursor, opencode)
 ```
 
+Claude Code gateway mode can also be launched directly:
+
+```bash
+ANTHROPIC_BASE_URL=http://localhost:8080 \
+ANTHROPIC_AUTH_TOKEN=dummy \
+ANTHROPIC_MODEL=auto \
+ANTHROPIC_SMALL_FAST_MODEL=auto \
+CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1 \
+claude
+```
+
 Your existing OpenAI/Anthropic apps work the same way — set `OPENAI_BASE_URL` (or
 `ANTHROPIC_BASE_URL`) to the proxy and keep your code unchanged.
 
@@ -214,15 +225,19 @@ model aliases, and settings instead of env vars.
 ## How routing works
 
 For each request, freellmpool builds the list of `(provider, model)` pairs you
-have access to, orders them least-used-first (so load spreads across tiers), and
-tries them in order until one returns a non-empty result. A provider that returns
-a 429 is set aside for a cooldown window. Daily counts are kept in
-`~/.config/freellmpool/quota.json` and reset at UTC midnight.
+have access to, then orders providers least-used-first and picks a least-used
+model inside that provider. This keeps providers with large catalogs, like
+NVIDIA, from receiving more traffic only because they expose more models. A
+provider that returns a 429 is set aside for a cooldown window. Daily counts are
+kept in `~/.config/freellmpool/quota.json` and reset at UTC midnight.
 
-Every call records latency and success per provider. A provider that is currently
-failing sinks to the back automatically; with `FREELLMPOOL_ROUTING=fast` the
-fastest measured provider goes first instead. `freellmpool benchmark` warms these
-metrics on demand.
+Every call records latency and success per model target. A provider whose targets
+are currently failing sinks to the back automatically; with
+`FREELLMPOOL_ROUTING=fast` the fastest measured provider goes first instead.
+`freellmpool benchmark` warms these metrics on demand. To restore the old
+per-model balancing behavior, set `FREELLMPOOL_ROUTING=legacy` or
+`FREELLMPOOL_ROUTING=model` (or `FREELLMPOOL_ROUTING=model-fast` for the old
+per-model fastest-first ordering).
 
 **Context windows.** Free models often have small context windows. freellmpool
 never truncates your input; instead, when a model rejects a request as too long,
@@ -273,8 +288,10 @@ or down, and tracks per-day usage so load spreads across tiers.
 
 **Can I run Claude Code or Codex on free models?** Yes — the proxy speaks both the
 OpenAI and Anthropic APIs. Set `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` to the proxy
-and run Codex, Claude Code, aider, Cline, Continue, or Cursor unchanged. See
-`freellmpool code <agent>`. (Claude Code path is experimental: text + tools, no vision.)
+and run Codex, Claude Code, aider, Cline, Continue, or Cursor unchanged. For Claude
+Code, set `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` so `/v1/models` is discovered
+through the Anthropic bridge. See `freellmpool code <agent>`. (Claude Code path is
+experimental: text + tools, no vision.)
 
 **Do I need an API key?** No — Pollinations and OVHcloud work with no key, so a fresh
 install answers immediately. Add free keys for the other providers for more models and

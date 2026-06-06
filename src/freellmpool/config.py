@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import re
 import tomllib
+from functools import lru_cache
 from pathlib import Path
 
 from .models import Model, Provider
@@ -73,6 +74,50 @@ def resolve_alias(name: str, env: dict[str, str] | None = None) -> str:
     if low.startswith(("claude-", "claude ", "gpt-", "o1-", "o3-", "o4-", "chatgpt")):
         return "auto"
     return name
+
+
+def known_aliases(env: dict[str, str] | None = None) -> list[str]:
+    """Model aliases understood by :func:`resolve_alias`.
+
+    Used by gateway model discovery so clients can choose a well-known Claude or
+    OpenAI model name and still have the proxy resolve it to the free pool.
+    """
+    env = env if env is not None else dict(os.environ)
+    return list(_known_aliases_cached(_alias_cache_key(env)))
+
+
+def _alias_cache_key(env: dict[str, str]) -> tuple:
+    """Stable cache key for alias discovery.
+
+    Only alias-related env vars and config-file path metadata affect
+    ``known_aliases``. File mtime/size keep gateway discovery fresh after config
+    edits without re-reading TOML on every `/v1/models` request.
+    """
+    path = _config_file_path(env)
+    try:
+        stat = path.stat() if path is not None else None
+    except OSError:
+        stat = None
+    config_sig = (
+        str(path) if path is not None else "",
+        stat.st_mtime_ns if stat is not None else 0,
+        stat.st_size if stat is not None else 0,
+    )
+    env_aliases = tuple(
+        sorted((k, v) for k, v in env.items() if k.startswith(_ALIAS_ENV_PREFIX))
+    )
+    return config_sig + (env_aliases,)
+
+
+@lru_cache(maxsize=64)
+def _known_aliases_cached(cache_key: tuple) -> tuple[str, ...]:
+    path_str, _, _, env_aliases = cache_key
+    aliases = set(_DEFAULT_ALIASES)
+    if path_str:
+        cfg = load_config_file({"FREELLMPOOL_CONFIG_FILE": path_str})
+        aliases.update(str(k) for k in cfg.get("aliases", {}))
+    aliases.update(k[len(_ALIAS_ENV_PREFIX) :] for k, _ in env_aliases)
+    return tuple(sorted(aliases))
 
 
 def _user_catalog_path() -> Path | None:

@@ -74,6 +74,17 @@ class Target:
         return f"{self.provider.id}/{self.model}"
 
 
+@dataclass
+class _ProviderOrderStats:
+    """Precomputed routing stats for one provider in a candidate set."""
+
+    targets: list[Target]
+    used: int = 0
+    all_over: bool = True
+    all_failing: bool = True
+    best_score: float = float("inf")
+
+
 class Pool:
     def __init__(
         self,
@@ -101,9 +112,14 @@ class Pool:
         self.cooldown_seconds = cooldown_seconds
         self._clock = clock or time.monotonic
         self.metrics = metrics or Metrics()
-        # "fair"  — least-used-first (spread load), failing targets sink to the back.
-        # "fast"  — lowest measured latency / failure penalty first, then least-used.
-        self.routing = routing if routing in ("fair", "fast") else "fair"
+        # "fair"  — least-used provider first, then least-used model in provider.
+        # "fast"  — lowest measured provider latency / failure penalty first.
+        # "legacy"/"model" keep the old per-(provider, model) balancing behavior.
+        self.routing = (
+            routing
+            if routing in ("fair", "fast", "legacy", "model", "model-fast")
+            else "fair"
+        )
         self._on_event = on_event
         # provider_id -> monotonic time until which to deprioritize after a 429
         self._cooldown_until: dict[str, float] = {}
@@ -267,13 +283,13 @@ class Pool:
     def _order(self, targets: list[Target]) -> list[Target]:
         """Order candidate targets for failover.
 
-        ``fair`` (default): least-used-first, so load spreads across free tiers.
-        Targets over their daily budget hint, or measured to be currently failing,
-        sink to the back (still tried if everything else fails).
+        ``fair`` (default): least-used provider first, then least-used model inside
+        that provider. This prevents wide catalogs from getting extra traffic only
+        because they expose more models.
 
-        ``fast``: lowest measured latency / failure penalty first (then least-used).
-        Targets with no measurements yet are treated as neutral so they still get
-        sampled. Either way the ordering is a hint — failover still reaches all.
+        ``fast``: lowest measured provider latency / failure penalty first, then
+        least-used provider. ``legacy``/``model`` preserve the previous per-target
+        balancing. Either way the ordering is a hint — failover still reaches all.
         """
 
         # One snapshot instead of a locked read per target (matters for large catalogs).
@@ -286,18 +302,61 @@ class Pool:
         def over_of(t: Target) -> int:
             return 1 if (t.rpd > 0 and used_of(t) >= t.rpd) else 0
 
-        if self.routing == "fast":
+        if self.routing in ("legacy", "model", "model-fast"):
 
-            def fast_key(t: Target) -> tuple[int, float, int]:
+            def legacy_fast_key(t: Target) -> tuple[int, float, int]:
                 return (over_of(t), metrics.score(t.name), used_of(t))
 
-            return sorted(targets, key=fast_key)
+            def legacy_fair_key(t: Target) -> tuple[int, int, int]:
+                return (over_of(t), 1 if metrics.failing(t.name) else 0, used_of(t))
 
-        def fair_key(t: Target) -> tuple[int, int, int]:
-            # over-budget, then known-failing, then least-used.
+            key = legacy_fast_key if self.routing == "model-fast" else legacy_fair_key
+            return sorted(targets, key=key)
+
+        by_provider: dict[str, _ProviderOrderStats] = {}
+        for target in targets:
+            provider_id = target.provider.id
+            stats = by_provider.setdefault(provider_id, _ProviderOrderStats(targets=[]))
+            stats.targets.append(target)
+            target_used = used_of(target)
+            target_over = over_of(target)
+            target_failing = metrics.failing(target.name)
+            stats.used += target_used
+            stats.all_over = stats.all_over and bool(target_over)
+            stats.all_failing = stats.all_failing and target_failing
+            stats.best_score = min(stats.best_score, metrics.score(target.name))
+
+        def target_fair_key(t: Target) -> tuple[int, int, int]:
             return (over_of(t), 1 if metrics.failing(t.name) else 0, used_of(t))
 
-        return sorted(targets, key=fair_key)
+        def target_fast_key(t: Target) -> tuple[int, float, int]:
+            return (over_of(t), metrics.score(t.name), used_of(t))
+
+        if self.routing == "fast":
+
+            def provider_fast_key(provider_id: str) -> tuple[int, float, int]:
+                stats = by_provider[provider_id]
+                return (1 if stats.all_over else 0, stats.best_score, stats.used)
+
+            provider_order = sorted(by_provider, key=provider_fast_key)
+            target_key = target_fast_key
+        else:
+
+            def provider_fair_key(provider_id: str) -> tuple[int, int, int]:
+                stats = by_provider[provider_id]
+                return (
+                    1 if stats.all_over else 0,
+                    1 if stats.all_failing else 0,
+                    stats.used,
+                )
+
+            provider_order = sorted(by_provider, key=provider_fair_key)
+            target_key = target_fair_key
+
+        ordered: list[Target] = []
+        for provider_id in provider_order:
+            ordered.extend(sorted(by_provider[provider_id].targets, key=target_key))
+        return ordered
 
     # ---- the main entrypoint ------------------------------------------
 
