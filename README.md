@@ -224,6 +224,14 @@ failing sinks to the back automatically; with `FREELLMPOOL_ROUTING=fast` the
 fastest measured provider goes first instead. `freellmpool benchmark` warms these
 metrics on demand.
 
+**Context windows.** Free models often have small context windows. freellmpool
+never truncates your input; instead, when a model rejects a request as too long,
+it learns that model's limit and stops routing oversized requests there, escalating
+only to larger-window models. If nothing fits it raises a clear
+`ContextWindowExceeded` (with the estimated input size) instead of a generic
+failure — over the proxy that's a `413`. You can declare a model's window with
+`context = N` in `providers.toml` to skip it proactively.
+
 Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Limitations

@@ -178,8 +178,22 @@ def stream_call(
     status, line_iter = stream_post(url, headers, body, timeout)
     close = getattr(line_iter, "close", lambda: None)
     if status != 200:
-        close()
-        raise ProviderHTTPError(status, f"HTTP {status}", retryable=_retryable(status))
+        # Drain a *bounded* prefix of the error body so the router can classify it
+        # — e.g. a context-length 400 — instead of seeing only a bare status code.
+        parts: list[str] = []
+        total = 0
+        try:
+            for chunk in line_iter:
+                parts.append(chunk)
+                total += len(chunk)
+                if total >= 500:
+                    break
+        except Exception:  # noqa: BLE001 — best-effort; fall back to the status
+            pass
+        finally:
+            close()
+        err_body = "".join(parts)[:500]
+        raise ProviderHTTPError(status, err_body or f"HTTP {status}", retryable=_retryable(status))
     try:
         for line in line_iter:
             if not line:

@@ -29,6 +29,27 @@ class AllProvidersExhausted(FreeLLMPoolError):
         super().__init__(f"all providers exhausted ({detail})")
 
 
+class ContextWindowExceeded(AllProvidersExhausted):
+    """Every candidate rejected the request because the input was too long.
+
+    A subclass of :class:`AllProvidersExhausted` (so existing handlers still catch
+    it) raised when failover ran out of models whose context window could fit the
+    request, and no *other* kind of failure occurred. ``est_tokens`` is freellmpool's
+    rough estimate of the request's input size.
+    """
+
+    def __init__(self, attempts: list[tuple[str, str]], *, est_tokens: int):
+        self.est_tokens = est_tokens
+        super().__init__(attempts)
+
+    def __str__(self) -> str:
+        detail = "; ".join(f"{name}: {reason}" for name, reason in self.attempts) or "no candidates"
+        return (
+            f"input is ~{self.est_tokens:,} tokens and exceeded the context window of every "
+            f"model tried — shorten the input or configure a larger-context provider ({detail})"
+        )
+
+
 class ProviderHTTPError(FreeLLMPoolError):
     """A provider returned a non-success HTTP status.
 

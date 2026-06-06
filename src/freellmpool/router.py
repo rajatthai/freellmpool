@@ -25,7 +25,13 @@ from .config import (
     load_embedders,
     settings,
 )
-from .errors import AllProvidersExhausted, NoProvidersConfigured, ProviderHTTPError
+from .context import context_limit_from_error, estimate_input_tokens
+from .errors import (
+    AllProvidersExhausted,
+    ContextWindowExceeded,
+    NoProvidersConfigured,
+    ProviderHTTPError,
+)
 from .metrics import Metrics
 from .models import EmbedReply, Provider, Reply
 from .observe import EventHook, emit
@@ -54,6 +60,7 @@ class Target:
     provider: Provider
     model: str
     rpd: int
+    context: int | None = None  # declared context-window size (tokens), if known
 
     @property
     def name(self) -> str:
@@ -97,6 +104,11 @@ class Pool:
         # cumulative usage for the "$ saved vs OpenAI" metric
         self.stats = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0, "cache_hits": 0}
         self._stats_lock = threading.Lock()  # the proxy serves requests on many threads
+        # Context-window limits learned from provider errors, keyed by provider/model.
+        # Lets the pool stop routing oversized requests to models it has seen reject
+        # them, without a hand-maintained per-model context table.
+        self._ctx_limits: dict[str, int] = {}
+        self._ctx_lock = threading.Lock()
 
     def _bump_stats(self, **deltas: int) -> None:
         """Thread-safe read-modify-write of the cumulative stats counters."""
@@ -114,6 +126,22 @@ class Pool:
     def _cooled(self, provider_id: str, now: float) -> bool:
         with self._cooldown_lock:
             return self._cooldown_until.get(provider_id, 0.0) > now
+
+    # ---- context-window awareness -------------------------------------
+
+    def _effective_context(self, target: Target) -> int | None:
+        """The tightest known context window for a target: the smaller of its
+        declared size and any limit learned from a prior error (or None)."""
+        with self._ctx_lock:
+            learned = self._ctx_limits.get(target.name)
+        sizes = [v for v in (target.context, learned) if v is not None]
+        return min(sizes) if sizes else None
+
+    def _learn_context_limit(self, target_name: str, limit: int) -> None:
+        """Record a context-window limit revealed by a provider error (tighter wins)."""
+        with self._ctx_lock:
+            prev = self._ctx_limits.get(target_name)
+            self._ctx_limits[target_name] = min(prev, limit) if prev is not None else limit
 
     # ---- construction -------------------------------------------------
 
@@ -212,7 +240,7 @@ class Pool:
                     # explicit model pin: allow it even if disabled by default
                 elif not m.enabled:
                     continue  # auto routing skips off-by-default models
-                targets.append(Target(provider, m.name, m.rpd))
+                targets.append(Target(provider, m.name, m.rpd, m.context))
         return targets
 
     def _order(self, targets: list[Target]) -> list[Target]:
@@ -338,6 +366,12 @@ class Pool:
 
         attempts: list[tuple[str, str]] = []
         rate_limited: set[str] = set()  # providers that 429'd during THIS request
+        # Context-window awareness: estimate the request size once, skip models we
+        # already know are too small, and fail loudly if nothing fits.
+        est_tokens = estimate_input_tokens(messages, tools)
+        needed = est_tokens + max_tokens
+        ctx_overflow = False
+        non_ctx_failure = False
         for target in sequence:
             if target.provider.id in rate_limited:
                 # Already 429'd this request — don't waste calls on its other models.
@@ -345,7 +379,16 @@ class Pool:
                 continue
             api_key = target.provider.api_key(self.env)
             if api_key is None and not target.provider.keyless:  # pragma: no cover
+                non_ctx_failure = True
                 attempts.append((target.name, "missing api key"))
+                continue
+            cap = self._effective_context(target)
+            if cap is not None and needed > cap:
+                attempts.append(
+                    (target.name, f"skipped (context ~{cap} < needed ~{needed} tokens)")
+                )
+                emit(self._on_event, "context_skip", target=target.name, context=cap, needed=needed)
+                ctx_overflow = True
                 continue
             emit(self._on_event, "attempt", target=target.name, n=len(attempts) + 1)
             started = self._clock()
@@ -364,16 +407,30 @@ class Pool:
                     post=self._post,
                 )
             except ProviderHTTPError as exc:
+                is_ctx, limit = context_limit_from_error(exc.status, str(exc))
+                if is_ctx:
+                    ctx_overflow = True
+                    if limit is not None:
+                        self._learn_context_limit(target.name, limit)
+                    emit(self._on_event, "error", target=target.name, reason=str(exc))
+                    attempts.append(
+                        (target.name, f"context window exceeded (limit ~{limit or '?'})")
+                    )
+                    continue
                 if exc.status == 429:
                     self._mark_cooldown(target.provider.id, self._clock())
                     rate_limited.add(target.provider.id)
                     emit(self._on_event, "cooldown", target=target.name, status=429)
+                # Any non-context failure (incl. a rate-limit, which might have fit)
+                # means "too long" isn't provably the whole story — stay generic.
+                non_ctx_failure = True
                 if _is_health_failure(exc):
                     self.metrics.record_failure(target.name, str(exc))
                 emit(self._on_event, "error", target=target.name, reason=str(exc))
                 attempts.append((target.name, str(exc)))
                 continue
             except Exception as exc:  # network error, etc. — try the next one
+                non_ctx_failure = True
                 self.metrics.record_failure(target.name, f"{type(exc).__name__}: {exc}")
                 emit(self._on_event, "error", target=target.name, reason=f"{type(exc).__name__}")
                 attempts.append((target.name, f"{type(exc).__name__}: {exc}"))
@@ -381,6 +438,7 @@ class Pool:
 
             has_tool_calls = bool(reply.message and reply.message.get("tool_calls"))
             if not reply.text and not has_tool_calls:
+                non_ctx_failure = True
                 self.metrics.record_failure(target.name, "empty completion")
                 emit(self._on_event, "error", target=target.name, reason="empty completion")
                 attempts.append((target.name, "empty completion"))
@@ -417,6 +475,8 @@ class Pool:
             return reply
 
         emit(self._on_event, "exhausted", attempts=len(attempts))
+        if ctx_overflow and not non_ctx_failure:
+            raise ContextWindowExceeded(attempts, est_tokens=est_tokens)
         raise AllProvidersExhausted(attempts)
 
     def stream_chat(
@@ -448,11 +508,24 @@ class Pool:
         sequence = [t for t, c in states if not c] + [t for t, c in states if c]
         attempts: list[tuple[str, str]] = []
         rate_limited: set[str] = set()
+        est_tokens = estimate_input_tokens(messages)
+        needed = est_tokens + max_tokens
+        ctx_overflow = False
+        non_ctx_failure = False
         for target in sequence:
             if target.provider.id in rate_limited:
                 continue
             api_key = target.provider.api_key(self.env)
             if api_key is None and not target.provider.keyless:
+                non_ctx_failure = True
+                continue
+            cap = self._effective_context(target)
+            if cap is not None and needed > cap:
+                attempts.append(
+                    (target.name, f"skipped (context ~{cap} < needed ~{needed} tokens)")
+                )
+                emit(self._on_event, "context_skip", target=target.name, context=cap, needed=needed)
+                ctx_overflow = True
                 continue
             emit(self._on_event, "attempt", target=target.name, stream=True)
             started = self._clock()
@@ -470,21 +543,36 @@ class Pool:
             try:
                 first = next(gen)  # triggers connection + status check
             except StopIteration:
+                non_ctx_failure = True
                 self.metrics.record_failure(target.name, "empty stream")
                 emit(self._on_event, "error", target=target.name, reason="empty stream")
                 attempts.append((target.name, "empty stream"))
                 continue
             except ProviderHTTPError as exc:
+                is_ctx, limit = context_limit_from_error(exc.status, str(exc))
+                if is_ctx:
+                    ctx_overflow = True
+                    if limit is not None:
+                        self._learn_context_limit(target.name, limit)
+                    emit(self._on_event, "error", target=target.name, reason=str(exc))
+                    attempts.append(
+                        (target.name, f"context window exceeded (limit ~{limit or '?'})")
+                    )
+                    continue
                 if exc.status == 429:
                     self._mark_cooldown(target.provider.id, self._clock())
                     rate_limited.add(target.provider.id)
                     emit(self._on_event, "cooldown", target=target.name, status=429)
+                # Any non-context failure (incl. a rate-limit, which might have fit)
+                # means "too long" isn't provably the whole story — stay generic.
+                non_ctx_failure = True
                 if _is_health_failure(exc):
                     self.metrics.record_failure(target.name, str(exc))
                 emit(self._on_event, "error", target=target.name, reason=str(exc))
                 attempts.append((target.name, str(exc)))
                 continue
             except Exception as exc:  # noqa: BLE001
+                non_ctx_failure = True
                 self.metrics.record_failure(target.name, f"{type(exc).__name__}: {exc}")
                 emit(self._on_event, "error", target=target.name, reason=f"{type(exc).__name__}")
                 attempts.append((target.name, f"{type(exc).__name__}: {exc}"))
@@ -508,4 +596,6 @@ class Pool:
             return
 
         emit(self._on_event, "exhausted", attempts=len(attempts))
+        if ctx_overflow and not non_ctx_failure:
+            raise ContextWindowExceeded(attempts, est_tokens=est_tokens)
         raise AllProvidersExhausted(attempts)

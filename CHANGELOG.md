@@ -33,6 +33,11 @@ healthy. From [#7](https://github.com/0xzr/freellmpool/pull/7) by
   back to the cache when offline.
 - **Dashboard capacity panel** — the proxy `/dashboard` now shows a healthy-provider
   count and a per-provider capacity/usage table.
+- **Context-aware failover.** When a model rejects an input as too long, freellmpool
+  learns that model's window (and honors an optional `context = N` hint per model in
+  `providers.toml`), stops routing oversized requests to models it knows can't fit,
+  and raises a clear `ContextWindowExceeded` (estimated input size included; a `413`
+  over the proxy) instead of a generic exhaustion. It never truncates your input.
 
 ### Changed
 - `benchmark` failures now include the exception message, not just its type.

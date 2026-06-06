@@ -9,7 +9,12 @@ Public API:
     print(reply.text)
 """
 
-from .errors import AllProvidersExhausted, FreeLLMPoolError, NoProvidersConfigured
+from .errors import (
+    AllProvidersExhausted,
+    ContextWindowExceeded,
+    FreeLLMPoolError,
+    NoProvidersConfigured,
+)
 from .metrics import Metrics
 from .models import EmbedReply, Model, Provider, Reply
 from .plugins import register_adapter, register_provider
@@ -41,5 +46,6 @@ __all__ = [
     "FreeLLMPoolError",
     "NoProvidersConfigured",
     "AllProvidersExhausted",
+    "ContextWindowExceeded",
     "__version__",
 ]

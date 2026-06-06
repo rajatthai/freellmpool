@@ -127,7 +127,12 @@ def _parse_rows(rows: list) -> list[Provider]:
     providers: list[Provider] = []
     for row in rows:
         models = tuple(
-            Model(name=m["name"], rpd=int(m.get("rpd", 0)), enabled=bool(m.get("enabled", True)))
+            Model(
+                name=m["name"],
+                rpd=int(m.get("rpd", 0)),
+                enabled=bool(m.get("enabled", True)),
+                context=int(m["context"]) if m.get("context") is not None else None,
+            )
             for m in row.get("models", [])
         )
         providers.append(

@@ -27,7 +27,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .anthropic_shim import estimate_tokens, reply_to_message, reply_to_sse, request_to_chat
 from .config import resolve_alias
-from .errors import AllProvidersExhausted, FreeLLMPoolError, NoProvidersConfigured
+from .errors import (
+    AllProvidersExhausted,
+    ContextWindowExceeded,
+    FreeLLMPoolError,
+    NoProvidersConfigured,
+)
 from .router import Pool
 
 _MAX_BODY = 16 * 1024 * 1024  # 16 MB cap on request bodies
@@ -192,6 +197,9 @@ def make_handler(pool: Pool, api_key: str | None = None):
             except NoProvidersConfigured as exc:
                 self._anthropic_error(503, str(exc), "no_providers")
                 return
+            except ContextWindowExceeded as exc:
+                self._anthropic_error(413, str(exc), "context_length_exceeded")
+                return
             except AllProvidersExhausted as exc:
                 self._anthropic_error(502, str(exc), "all_providers_exhausted")
                 return
@@ -261,6 +269,8 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 )
             except NoProvidersConfigured as exc:
                 self._error(503, str(exc), "no_providers")
+            except ContextWindowExceeded as exc:
+                self._error(413, str(exc), "context_length_exceeded")
             except AllProvidersExhausted as exc:
                 self._error(502, str(exc), "all_providers_exhausted")
             except FreeLLMPoolError as exc:  # pragma: no cover - defensive
@@ -317,6 +327,10 @@ def make_handler(pool: Pool, api_key: str | None = None):
                 meta = next(gen)  # provider/model chosen, or raises before any bytes
             except NoProvidersConfigured as exc:
                 self._error(503, str(exc), "no_providers")
+                return
+            except ContextWindowExceeded as exc:
+                # input is too long for every model — fail loudly, don't retry buffered.
+                self._error(413, str(exc), "context_length_exceeded")
                 return
             except (AllProvidersExhausted, StopIteration):
                 # nothing streamable succeeded — fall back to a buffered completion

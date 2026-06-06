@@ -28,7 +28,13 @@ from .client import (
     _strip_think,
     _to_gemini_contents,
 )
-from .errors import AllProvidersExhausted, NoProvidersConfigured, ProviderHTTPError
+from .context import context_limit_from_error, estimate_input_tokens
+from .errors import (
+    AllProvidersExhausted,
+    ContextWindowExceeded,
+    NoProvidersConfigured,
+    ProviderHTTPError,
+)
 from .models import Provider, Reply
 from .observe import emit
 from .router import Pool, _is_health_failure
@@ -341,13 +347,26 @@ class AsyncPool:
         sequence = [t for t, c in states if not c] + [t for t, c in states if c]
         attempts: list[tuple[str, str]] = []
         rate_limited: set[str] = set()
+        est_tokens = estimate_input_tokens(messages, tools)
+        needed = est_tokens + max_tokens
+        ctx_overflow = False
+        non_ctx_failure = False
         for target in sequence:
             if target.provider.id in rate_limited:
                 attempts.append((target.name, "skipped (provider rate-limited this request)"))
                 continue
             api_key = target.provider.api_key(self.env)
             if api_key is None and not target.provider.keyless:
+                non_ctx_failure = True
                 attempts.append((target.name, "missing api key"))
+                continue
+            cap = p._effective_context(target)
+            if cap is not None and needed > cap:
+                attempts.append(
+                    (target.name, f"skipped (context ~{cap} < needed ~{needed} tokens)")
+                )
+                emit(p._on_event, "context_skip", target=target.name, context=cap, needed=needed)
+                ctx_overflow = True
                 continue
             emit(p._on_event, "attempt", target=target.name, n=len(attempts) + 1)
             started = p._clock()
@@ -363,16 +382,30 @@ class AsyncPool:
                     tool_choice=tool_choice,
                 )
             except ProviderHTTPError as exc:
+                is_ctx, limit = context_limit_from_error(exc.status, str(exc))
+                if is_ctx:
+                    ctx_overflow = True
+                    if limit is not None:
+                        p._learn_context_limit(target.name, limit)
+                    emit(p._on_event, "error", target=target.name, reason=str(exc))
+                    attempts.append(
+                        (target.name, f"context window exceeded (limit ~{limit or '?'})")
+                    )
+                    continue
                 if exc.status == 429:
                     p._mark_cooldown(target.provider.id, p._clock())
                     rate_limited.add(target.provider.id)
                     emit(p._on_event, "cooldown", target=target.name, status=429)
+                # Any non-context failure (incl. a rate-limit, which might have fit)
+                # means "too long" isn't provably the whole story — stay generic.
+                non_ctx_failure = True
                 if _is_health_failure(exc):
                     p.metrics.record_failure(target.name, str(exc))
                 emit(p._on_event, "error", target=target.name, reason=str(exc))
                 attempts.append((target.name, str(exc)))
                 continue
             except Exception as exc:  # noqa: BLE001
+                non_ctx_failure = True
                 p.metrics.record_failure(target.name, f"{type(exc).__name__}: {exc}")
                 emit(p._on_event, "error", target=target.name, reason=f"{type(exc).__name__}")
                 attempts.append((target.name, f"{type(exc).__name__}: {exc}"))
@@ -380,6 +413,7 @@ class AsyncPool:
 
             has_tool_calls = bool(reply.message and reply.message.get("tool_calls"))
             if not reply.text and not has_tool_calls:
+                non_ctx_failure = True
                 p.metrics.record_failure(target.name, "empty completion")
                 emit(p._on_event, "error", target=target.name, reason="empty completion")
                 attempts.append((target.name, "empty completion"))
@@ -416,4 +450,6 @@ class AsyncPool:
             return reply
 
         emit(p._on_event, "exhausted", attempts=len(attempts))
+        if ctx_overflow and not non_ctx_failure:
+            raise ContextWindowExceeded(attempts, est_tokens=est_tokens)
         raise AllProvidersExhausted(attempts)

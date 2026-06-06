@@ -13,6 +13,7 @@ class Model:
     name: str
     rpd: int = 0  # free-tier requests-per-day hint; 0 = unknown/unmetered
     enabled: bool = True  # off-by-default models (failed live validation) are skipped by auto
+    context: int | None = None  # optional context-window size (tokens); None = unknown
 
     @property
     def key(self) -> str:
