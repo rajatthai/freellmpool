@@ -104,6 +104,39 @@ def test_cli_keys_add_cloudflare_prompts_for_account_id(tmp_path, monkeypatch, c
     assert "CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID" in capsys.readouterr().out
 
 
+def test_cli_keys_add_cloudflare_uses_existing_account_id(tmp_path, monkeypatch, capsys):
+    from freellmpool.cli import main
+    from freellmpool.config import effective_env, load_catalog
+
+    config = tmp_path / "config.toml"
+    inventory = tmp_path / "keys.toml"
+    config.write_text(
+        '[keys]\nCLOUDFLARE_API_TOKEN = "old-token"\nCLOUDFLARE_ACCOUNT_ID = "account-123"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FREELLMPOOL_CONFIG_FILE", str(config))
+    monkeypatch.setenv("FREELLMPOOL_KEYS_PATH", str(inventory))
+    prompts = []
+
+    def answer_confirm(prompt=""):
+        prompts.append(prompt)
+        return "y"
+
+    monkeypatch.setattr("builtins.input", answer_confirm)
+
+    assert main(["keys", "add", "cloudflare", "--value", "new-token"]) == 0
+
+    text = config.read_text()
+    assert 'CLOUDFLARE_API_TOKEN = "new-token"' in text
+    assert 'CLOUDFLARE_ACCOUNT_ID = "account-123"' in text
+    env = effective_env({"FREELLMPOOL_CONFIG_FILE": str(config)})
+    cloudflare = next(p for p in load_catalog() if p.id == "cloudflare")
+    assert cloudflare.is_configured(env)
+    assert len(prompts) == 1
+    assert "CLOUDFLARE_ACCOUNT_ID" not in prompts[0]
+    assert "Wrote: CLOUDFLARE_API_TOKEN" in capsys.readouterr().out
+
+
 def test_cli_keys_add_autodiscovers_model_when_blank(tmp_path, monkeypatch):
     from freellmpool.cli import main
 
