@@ -68,6 +68,14 @@ parse_args() {
         ;;
     esac
   done
+
+  case "$XT_ATTEMPT" in
+    ''|*[!0-9]*) XT_ATTEMPT="1" ;;
+  esac
+  case "$XT_TIMEOUT" in
+    0|false|False|FALSE|none|None|NONE|off|Off|OFF) ;;
+    ''|*[!0-9]*) XT_TIMEOUT="$PROVIDER_TIMEOUT" ;;
+  esac
 }
 
 create_secure_tmp() {
@@ -144,6 +152,29 @@ classify_error() {
   printf 'tool_crash'
 }
 
+redact_log_file() {
+  local log_file="${1:-}"
+  [[ -n "$log_file" && -f "$log_file" ]] || return 0
+
+  python3 - "$log_file" <<'PY'
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8", errors="replace")
+patterns = [
+    (re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s,;]+"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)((?:api[_-]?key|token|secret)\s*[:=]\s*)[^\s,;]+"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)((?:MISTRAL_API_KEY|NVIDIA_API_KEY|OPENROUTER_API_KEY)\s*=\s*)[^\s,;]+"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)([?&](?:api[_-]?key|key|token)=)[^&\s]+"), r"\1[REDACTED]"),
+]
+for pattern, replacement in patterns:
+    text = pattern.sub(replacement, text)
+path.write_text(text, encoding="utf-8")
+PY
+}
+
 strong_models_json() {
   python3 - "$STRONG_MODELS" <<'PY'
 import json
@@ -169,6 +200,7 @@ emit_json() {
     "$branch" "$git_sha" "$duration_seconds" "$raw_log_file" "$error_type" <<'PY'
 import json
 import pathlib
+import re
 import sys
 
 (
@@ -191,6 +223,15 @@ if raw_log_file:
     path = pathlib.Path(raw_log_file)
     if path.exists():
         raw_log = path.read_text(errors="replace")[-200000:]
+
+patterns = [
+    (re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s,;]+"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)((?:api[_-]?key|token|secret)\s*[:=]\s*)[^\s,;]+"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)((?:MISTRAL_API_KEY|NVIDIA_API_KEY|OPENROUTER_API_KEY)\s*=\s*)[^\s,;]+"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)([?&](?:api[_-]?key|key|token)=)[^&\s]+"), r"\1[REDACTED]"),
+]
+for pattern, replacement in patterns:
+    raw_log = pattern.sub(replacement, raw_log)
 
 print(json.dumps({
     "schema_version": schema_version,
@@ -237,12 +278,38 @@ emit_error() {
 
 build_keyed_env() {
   KEYED_ENV=("FREELLMPOOL_ROUTING=$DEFAULT_ROUTING")
-  [[ -n "${MISTRAL_API_KEY:-}" ]] && KEYED_ENV+=("MISTRAL_API_KEY=$MISTRAL_API_KEY")
-  [[ -n "${NVIDIA_API_KEY:-}" ]] && KEYED_ENV+=("NVIDIA_API_KEY=$NVIDIA_API_KEY")
-  [[ -n "${OPENROUTER_API_KEY:-}" ]] && KEYED_ENV+=("OPENROUTER_API_KEY=$OPENROUTER_API_KEY")
+  add_provider_key_env "MISTRAL_API_KEY"
+  add_provider_key_env "NVIDIA_API_KEY"
+  add_provider_key_env "OPENROUTER_API_KEY"
   [[ -n "${FREELLMPOOL_CONFIG:-}" ]] && KEYED_ENV+=("FREELLMPOOL_CONFIG=$FREELLMPOOL_CONFIG")
   [[ -n "${FREELLMPOOL_CONFIG_FILE:-}" ]] && KEYED_ENV+=("FREELLMPOOL_CONFIG_FILE=$FREELLMPOOL_CONFIG_FILE")
   [[ -n "${FREELLMPOOL_KEYS_PATH:-}" ]] && KEYED_ENV+=("FREELLMPOOL_KEYS_PATH=$FREELLMPOOL_KEYS_PATH")
+}
+
+provider_key_env_errors() {
+  local invalid=()
+  local name value
+  for name in MISTRAL_API_KEY NVIDIA_API_KEY OPENROUTER_API_KEY; do
+    value="${!name:-}"
+    [[ -z "$value" ]] && continue
+    case "$value" in
+      *$'\n'*|*$'\r'*|*$'\t'*|*" "*|*"="*) invalid+=("$name") ;;
+    esac
+  done
+  if [[ "${#invalid[@]}" -gt 0 ]]; then
+    local IFS=,
+    printf '%s' "${invalid[*]}"
+  fi
+}
+
+add_provider_key_env() {
+  local name="${1:?name required}"
+  local value="${!name:-}"
+  [[ -z "$value" ]] && return 0
+  case "$value" in
+    *$'\n'*|*$'\r'*|*$'\t'*|*" "*|*"="*) return 0 ;;
+  esac
+  KEYED_ENV+=("$name=$value")
 }
 
 count_configured_strong_providers() {
@@ -276,8 +343,11 @@ cmd_health() {
     strong_provider_info="$(count_configured_strong_providers 2>/dev/null || printf '0\n')"
     strong_provider_count="$(printf '%s\n' "$strong_provider_info" | sed -n '1p')"
     strong_provider_count="${strong_provider_count:-0}"
+    case "$strong_provider_count" in
+      ''|*[!0-9]*) strong_provider_count="0" ;;
+    esac
     configured_strong_providers="$(printf '%s\n' "$strong_provider_info" | sed -n '2p')"
-    if [[ "$strong_provider_count" -gt 0 ]]; then
+    if [[ -z "$(provider_key_env_errors)" && "$strong_provider_count" -gt 0 ]]; then
       status="ready"
       auth_valid=true
     fi
@@ -332,7 +402,7 @@ cmd_implement() {
   log_session "$result"
   printf '%s\n' "$result"
   rm -rf "$tmp_dir"
-  return 1
+  return 2
 }
 
 cmd_review() {
@@ -369,10 +439,26 @@ cmd_review() {
   local tool_bin
   tool_bin="$(command -v "$TOOL_CMD")"
 
+  local invalid_provider_keys
+  invalid_provider_keys="$(provider_key_env_errors)"
+  if [[ -n "$invalid_provider_keys" ]]; then
+    raw_log_file="${tmp_dir}/invalid-provider-keys.txt"
+    printf 'Invalid provider key environment variable value for: %s. Provider key env vars are not forwarded when they contain whitespace, equals signs, or control characters; use freellmpool keys add instead.\n' "$invalid_provider_keys" >"$raw_log_file"
+    local invalid_key_json
+    invalid_key_json="$(emit_error "review" "$DEFAULT_MODEL" "$XT_ATTEMPT" 2 "" 0 "$raw_log_file" "auth_missing")"
+    log_session "$invalid_key_json"
+    printf '%s\n' "$invalid_key_json"
+    rm -rf "$tmp_dir"
+    return 1
+  fi
+
   local strong_provider_info strong_provider_count
   strong_provider_info="$(count_configured_strong_providers 2>/dev/null || printf '0\n')"
   strong_provider_count="$(printf '%s\n' "$strong_provider_info" | sed -n '1p')"
   strong_provider_count="${strong_provider_count:-0}"
+  case "$strong_provider_count" in
+    ''|*[!0-9]*) strong_provider_count="0" ;;
+  esac
   if [[ "$strong_provider_count" -eq 0 ]]; then
     raw_log_file="${tmp_dir}/missing-strong-provider-keys.txt"
     printf 'No configured strong freellmpool providers. Configure at least one of: %s. For the default metaswarm review panel, set one or more of MISTRAL_API_KEY, NVIDIA_API_KEY, OPENROUTER_API_KEY, or use freellmpool keys add.\n' "$STRONG_PROVIDERS" >"$raw_log_file"
@@ -563,6 +649,7 @@ PROMPT_EOF
       cat "$stderr_file"
     fi
   } >"$raw_log_file" 2>/dev/null || true
+  redact_log_file "$raw_log_file"
 
   local branch git_sha result
   branch="$(git -C "$XT_WORKTREE" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"

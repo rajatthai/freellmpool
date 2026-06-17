@@ -31,14 +31,7 @@ def _base_env(tmp_path: Path) -> dict[str, str]:
     return env
 
 
-def test_metaswarm_adapter_shell_syntax() -> None:
-    result = subprocess.run(["bash", "-n", str(ADAPTER)], text=True, capture_output=True)
-    assert result.returncode == 0, result.stderr
-
-
-def test_metaswarm_adapter_no_key_review_fails_closed(tmp_path: Path) -> None:
-    env = _base_env(tmp_path)
-
+def _dirty_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
@@ -48,11 +41,40 @@ def test_metaswarm_adapter_no_key_review_fails_closed(tmp_path: Path) -> None:
     subprocess.run(["git", "add", "example.txt"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=repo, check=True)
     (repo / "example.txt").write_text("after\n", encoding="utf-8")
+    return repo
 
+
+def _review_files(tmp_path: Path) -> tuple[Path, Path]:
     spec = tmp_path / "spec.md"
     rubric = tmp_path / "rubric.md"
     spec.write_text("Return PASS when the diff has no secret.\n", encoding="utf-8")
     rubric.write_text("Check for secrets only. Blocking issues require FAIL.\n", encoding="utf-8")
+    return spec, rubric
+
+
+def _fake_freellmpool(tmp_path: Path, body: str) -> Path:
+    fake = tmp_path / "freellmpool-fake"
+    fake.write_text(f"#!/usr/bin/env bash\nset -euo pipefail\n{body}\n", encoding="utf-8")
+    fake.chmod(0o755)
+    return fake
+
+
+def test_metaswarm_adapter_shell_syntax() -> None:
+    result = subprocess.run(["bash", "-n", str(ADAPTER)], text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+
+
+def test_metaswarm_adapter_no_key_review_fails_closed(tmp_path: Path) -> None:
+    env = _base_env(tmp_path)
+    repo = _dirty_repo(tmp_path)
+    spec, rubric = _review_files(tmp_path)
+    fake_log = tmp_path / "fake-called.log"
+    env["FREELLMPOOL_CMD"] = str(
+        _fake_freellmpool(
+            tmp_path,
+            f'printf "%s\\n" "$*" >> "{fake_log}"\nexit 99',
+        )
+    )
 
     result = subprocess.run(
         [
@@ -83,6 +105,142 @@ def test_metaswarm_adapter_no_key_review_fails_closed(tmp_path: Path) -> None:
     assert "NVIDIA_API_KEY" in payload["raw_log"]
     assert "OPENROUTER_API_KEY" in payload["raw_log"]
     assert "secret" not in payload["raw_log"].lower()
+    assert not fake_log.exists()
+
+
+def test_metaswarm_adapter_tool_not_installed(tmp_path: Path) -> None:
+    env = _base_env(tmp_path)
+    env["FREELLMPOOL_CMD"] = str(tmp_path / "missing-freellmpool")
+    repo = _dirty_repo(tmp_path)
+    spec, rubric = _review_files(tmp_path)
+
+    result = subprocess.run(
+        [
+            str(ADAPTER),
+            "review",
+            "--worktree",
+            str(repo),
+            "--rubric-file",
+            str(rubric),
+            "--spec-file",
+            str(spec),
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["error_type"] == "tool_not_installed"
+    assert payload["exit_code"] == 127
+
+
+def test_metaswarm_adapter_health_empty_config_unavailable(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [str(ADAPTER), "health"],
+        text=True,
+        capture_output=True,
+        env=_base_env(tmp_path),
+        check=False,
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "unavailable"
+    assert payload["auth_valid"] is False
+    assert payload["strong_provider_count"] == 0
+
+
+def test_metaswarm_adapter_redacts_provider_error_logs(tmp_path: Path) -> None:
+    env = _base_env(tmp_path)
+    env["MISTRAL_API_KEY"] = "redaction-test-key"
+    env["FREELLMPOOL_REVIEW_MODE"] = "ask"
+    env["FREELLMPOOL_STRONG_PROVIDERS"] = "mistral"
+    env["FREELLMPOOL_CMD"] = str(
+        _fake_freellmpool(
+            tmp_path,
+            """
+if [[ "${1:-}" == "--version" ]]; then
+  printf 'freellmpool fake\\n'
+  exit 0
+fi
+printf 'Authorization: Bearer redaction-test-key\\n' >&2
+printf 'MISTRAL_API_KEY=redaction-test-key\\n' >&2
+printf 'api_key=redaction-test-key\\n' >&2
+exit 1
+""",
+        )
+    )
+    repo = _dirty_repo(tmp_path)
+    spec, rubric = _review_files(tmp_path)
+
+    result = subprocess.run(
+        [
+            str(ADAPTER),
+            "review",
+            "--worktree",
+            str(repo),
+            "--rubric-file",
+            str(rubric),
+            "--spec-file",
+            str(spec),
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["error_type"] == "auth_expired"
+    assert "redaction-test-key" not in payload["raw_log"]
+    assert "Bearer [REDACTED]" in payload["raw_log"]
+    assert "MISTRAL_API_KEY=[REDACTED]" in payload["raw_log"]
+    assert "api_key=[REDACTED]" in payload["raw_log"]
+    persisted_log = Path(payload["raw_log_path"]).read_text(encoding="utf-8")
+    assert "redaction-test-key" not in persisted_log
+
+
+def test_metaswarm_adapter_invalid_provider_key_fails_closed(tmp_path: Path) -> None:
+    env = _base_env(tmp_path)
+    env["MISTRAL_API_KEY"] = "bad key value"
+    env["FREELLMPOOL_STRONG_PROVIDERS"] = "mistral"
+    fake_log = tmp_path / "fake-called.log"
+    env["FREELLMPOOL_CMD"] = str(
+        _fake_freellmpool(
+            tmp_path,
+            f'printf "%s\\n" "$*" >> "{fake_log}"\nexit 99',
+        )
+    )
+    repo = _dirty_repo(tmp_path)
+    spec, rubric = _review_files(tmp_path)
+
+    result = subprocess.run(
+        [
+            str(ADAPTER),
+            "review",
+            "--worktree",
+            str(repo),
+            "--rubric-file",
+            str(rubric),
+            "--spec-file",
+            str(spec),
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["error_type"] == "auth_missing"
+    assert "MISTRAL_API_KEY" in payload["raw_log"]
+    assert "bad key value" not in payload["raw_log"]
+    assert not fake_log.exists()
 
 
 def test_metaswarm_adapter_implement_is_unsupported(tmp_path: Path) -> None:
@@ -94,7 +252,7 @@ def test_metaswarm_adapter_implement_is_unsupported(tmp_path: Path) -> None:
         check=False,
     )
 
-    assert result.returncode == 1
+    assert result.returncode == 2
     payload = json.loads(result.stdout)
     assert payload["tool"] == "freellmpool"
     assert payload["command"] == "implement"

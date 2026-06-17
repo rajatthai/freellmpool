@@ -69,6 +69,10 @@ routing:
   second_opinion: "freellmpool"
 ```
 
+Both `review` and `second_opinion` route to the adapter's `review` command.
+Metaswarm decides when a second opinion is needed; the adapter keeps one
+review-only execution path and intentionally rejects `implement`.
+
 The exact model list is intentionally configurable. Free-tier provider health
 changes, so override `FREELLMPOOL_STRONG_MODELS` or the YAML value when a model is
 slow, unavailable, or no longer useful for review.
