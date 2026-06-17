@@ -103,9 +103,11 @@ required environment variable names but not secret values.
 | `FREELLMPOOL_STRONG_MODELS` | Comma-separated exact provider/model ids for strong mode. |
 | `FREELLMPOOL_STRONG_PROVIDERS` | Provider ids that must be configured for ready health. |
 | `FREELLMPOOL_MAX_MODELS` | Model cap for strong/tokenmax review. |
+| `FREELLMPOOL_MAX_MODELS_HARD_CAP` | Safety cap for concurrent model calls, default `16`. |
 | `FREELLMPOOL_MAX_TOKENS` | Max output tokens per model. |
 | `FREELLMPOOL_PROVIDER_TIMEOUT_SECONDS` | Per-model upstream timeout. |
 | `FREELLMPOOL_SYNTHESIS_TIMEOUT_SECONDS` | Synthesis call timeout. |
+| `FREELLMPOOL_ADAPTER_PATH` | Sanitized `PATH` used for child `freellmpool` calls. |
 | `METASWARM_LOG_DIR` | Directory for raw review logs. |
 
 Use provider keys from your environment (`MISTRAL_API_KEY`, `NVIDIA_API_KEY`,

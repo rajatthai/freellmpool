@@ -21,6 +21,18 @@ SYNTHESIS_TIMEOUT="${FREELLMPOOL_SYNTHESIS_TIMEOUT_SECONDS:-600}"
 STRONG_PROVIDERS="${FREELLMPOOL_STRONG_PROVIDERS:-mistral,nvidia,openrouter}"
 STRONG_MODELS="${FREELLMPOOL_STRONG_MODELS:-nvidia/moonshotai/kimi-k2.6,nvidia/z-ai/glm-5.1,nvidia/mistralai/mistral-large-3-675b-instruct-2512,mistral/mistral-large-latest,nvidia/nvidia/nemotron-3-ultra-550b-a55b,openrouter/nvidia/nemotron-3-ultra-550b-a55b:free,openrouter/openai/gpt-oss-120b:free}"
 LOG_DIR="${METASWARM_LOG_DIR:-${TMPDIR:-/tmp}/metaswarm-freellmpool}"
+SAFE_PATH="${FREELLMPOOL_ADAPTER_PATH:-/usr/local/bin:/usr/bin:/bin}"
+HARD_MAX_MODELS="${FREELLMPOOL_MAX_MODELS_HARD_CAP:-16}"
+
+case "$MAX_MODELS" in
+  ''|*[!0-9]*) MAX_MODELS="7" ;;
+esac
+case "$HARD_MAX_MODELS" in
+  ''|*[!0-9]*) HARD_MAX_MODELS="16" ;;
+esac
+if (( MAX_MODELS > HARD_MAX_MODELS )); then
+  MAX_MODELS="$HARD_MAX_MODELS"
+fi
 
 XT_WORKTREE=""
 XT_RUBRIC_FILE=""
@@ -354,6 +366,8 @@ cmd_review() {
     rm -rf "$tmp_dir"
     return 1
   fi
+  local tool_bin
+  tool_bin="$(command -v "$TOOL_CMD")"
 
   local strong_provider_info strong_provider_count
   strong_provider_info="$(count_configured_strong_providers 2>/dev/null || printf '0\n')"
@@ -428,8 +442,8 @@ PROMPT_EOF
       local model_stdout="${tmp_dir}/model-${attempted}.out"
       local model_stderr="${tmp_dir}/model-${attempted}.err"
       safe_invoke "$PROVIDER_TIMEOUT" "$model_stdout" "$model_stderr" \
-        env -i HOME="$HOME" PATH="$PATH" "${KEYED_ENV[@]}" \
-        "$TOOL_CMD" ask \
+        env -i HOME="$HOME" PATH="$SAFE_PATH" "${KEYED_ENV[@]}" \
+        "$tool_bin" ask \
           --model "$model" \
           --max-tokens "$MAX_TOKENS" \
           --temperature 0 \
@@ -491,8 +505,8 @@ PROMPT_EOF
       local synthesis_stderr="${tmp_dir}/synthesis.err"
       local synthesis_exit=0
       safe_invoke "$SYNTHESIS_TIMEOUT" "$synthesis_stdout" "$synthesis_stderr" \
-        env -i HOME="$HOME" PATH="$PATH" "${KEYED_ENV[@]}" \
-        "$TOOL_CMD" ask \
+        env -i HOME="$HOME" PATH="$SAFE_PATH" "${KEYED_ENV[@]}" \
+        "$tool_bin" ask \
           --model "$first_success_model" \
           --max-tokens "$MAX_TOKENS" \
           --temperature 0 \
@@ -514,8 +528,8 @@ PROMPT_EOF
     fi
   elif [[ "$REVIEW_MODE" == "tokenmax" ]]; then
     safe_invoke "${XT_TIMEOUT:-$PROVIDER_TIMEOUT}" "$stdout_file" "$stderr_file" \
-      env -i HOME="$HOME" PATH="$PATH" "${KEYED_ENV[@]}" \
-      "$TOOL_CMD" tokenmax \
+      env -i HOME="$HOME" PATH="$SAFE_PATH" "${KEYED_ENV[@]}" \
+      "$tool_bin" tokenmax \
         --max-models "$MAX_MODELS" \
         --max-tokens "$MAX_TOKENS" \
         --timeout "$PROVIDER_TIMEOUT" \
@@ -524,8 +538,8 @@ PROMPT_EOF
       || exit_code=$?
   else
     safe_invoke "${XT_TIMEOUT:-$PROVIDER_TIMEOUT}" "$stdout_file" "$stderr_file" \
-      env -i HOME="$HOME" PATH="$PATH" "${KEYED_ENV[@]}" \
-      "$TOOL_CMD" ask \
+      env -i HOME="$HOME" PATH="$SAFE_PATH" "${KEYED_ENV[@]}" \
+      "$tool_bin" ask \
         --max-tokens "$MAX_TOKENS" \
         --temperature 0 \
         --timeout "$PROVIDER_TIMEOUT" \
@@ -603,9 +617,11 @@ Environment:
   FREELLMPOOL_STRONG_MODELS               comma-separated exact model ids for strong mode.
   FREELLMPOOL_STRONG_PROVIDERS            comma-separated provider ids required for ready health.
   FREELLMPOOL_MAX_MODELS                  max strong/tokenmax models, default 7.
+  FREELLMPOOL_MAX_MODELS_HARD_CAP         safety cap for concurrent model calls, default 16.
   FREELLMPOOL_MAX_TOKENS                  max output tokens per model, default 65536.
   FREELLMPOOL_PROVIDER_TIMEOUT_SECONDS    per-model upstream timeout, default 600.
   FREELLMPOOL_SYNTHESIS_TIMEOUT_SECONDS   synthesis timeout, default 600.
+  FREELLMPOOL_ADAPTER_PATH                PATH used for child freellmpool calls.
   METASWARM_LOG_DIR                       raw review log directory.
 USAGE
     exit 2
