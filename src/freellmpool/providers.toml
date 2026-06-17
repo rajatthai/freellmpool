@@ -78,8 +78,9 @@ models = [
     { name = "nvidia/nemotron-3-super-120b-a12b:free", rpd = 0 },
 ]
 
-# OpenCode Zen: keyless OpenAI-compatible gateway. Most "free" promotional routes
-# expire quickly; keep only routes live-validated without auth.
+# OpenCode Zen: keyless OpenAI-compatible gateway. Free promotional routes expire
+# quickly and are not part of the default zero-key pool until explicitly vetted for
+# privacy/retention posture.
 [[provider]]
 id = "opencode"
 label = "OpenCode Zen (keyless)"
@@ -87,9 +88,9 @@ adapter = "openai"
 base_url = "https://opencode.ai/zen/v1"
 auth = "none"
 models = [
-    { name = "deepseek-v4-flash-free", rpd = 0 },
-    { name = "nemotron-3-ultra-free", rpd = 0 },
-    { name = "north-mini-code-free", rpd = 0 },
+    { name = "deepseek-v4-flash-free", rpd = 0, enabled = false },
+    { name = "nemotron-3-ultra-free", rpd = 0, enabled = false },
+    { name = "north-mini-code-free", rpd = 0, enabled = false },
 ]
 
 # Hugging Face router: OpenAI-compatible aggregator over inference providers (Fireworks,

@@ -46,7 +46,7 @@ providers — Groq, Cerebras, NVIDIA, Google Gemini, OpenRouter, Cloudflare, Mis
 behind one OpenAI-compatible endpoint.</strong> It runs as a command-line tool, a Python library, a
 local proxy, and an <a href="https://modelcontextprotocol.io">MCP</a> server, with automatic failover
 when a provider is rate-limited and per-day quota tracking across tiers. Several providers (Pollinations,
-OVHcloud, Kilo Gateway, and OpenCode Zen) need no API key, and LLM7 works without one, so <code>pip install freellmpool</code> answers immediately — no signup.
+OVHcloud, and Kilo Gateway) need no API key, and LLM7 works without one, so <code>pip install freellmpool</code> answers immediately — no signup.
 The proxy speaks both the OpenAI and the Anthropic API, so existing apps and coding agents such as
 Codex, Claude Code, and aider run on pooled free models with no code changes.</p>
 
@@ -124,12 +124,12 @@ Run <code>freellmpool code claude</code> for the exact setup. (The Claude Code p
 text and tool use, no vision yet.)</p>
 
 <h3>Do I need an API key?</h3>
-<p>No key is required to start: Pollinations, OVHcloud, Kilo Gateway, and OpenCode Zen work anonymously,
+<p>No key is required to start: Pollinations, OVHcloud, and Kilo Gateway work anonymously,
 and LLM7 is key-optional, so a fresh install answers immediately. Add free keys for the other providers to
 unlock more models and higher limits.</p>
 
 <h3>Which free LLM providers does it support?</h3>
-<p>19 providers: Pollinations, OVHcloud, LLM7, Kilo Gateway, OpenCode Zen, Groq, Cerebras, NVIDIA NIM,
+<p>19 providers: Pollinations, OVHcloud, LLM7, Kilo Gateway, OpenCode Zen (disabled by default), Groq, Cerebras, NVIDIA NIM,
 OpenRouter, Google Gemini, GitHub Models, Cloudflare Workers AI, Mistral, Cohere, SambaNova, Z.ai/Zhipu,
 Ollama Cloud, LongCat, and Hugging Face (router) — 200+ live-validated chat models, 300+ cataloged models,
 plus free embeddings and audio transcription (Whisper).</p>

@@ -27,7 +27,7 @@
 <p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> › reference</p>
 <h1>Free LLM API providers (2026)</h1>
 
-<p class="lead"><strong>These 19 providers offer a free LLM API tier you can call today. Four need no API
+<p class="lead"><strong>These 19 providers offer a free LLM API tier you can call today. Three need no API
 key at all, and LLM7 is key-optional. The table shows whether a key is required, roughly how many models the free tier exposes, and
 a free-tier signal where known. The catch with using several is that each has its own SDK and limits — the
 open-source <a href="https://github.com/0xzr/freellmpool">freellmpool</a> pools all of them behind one
@@ -39,7 +39,7 @@ OpenAI-compatible endpoint with failover, so you get their combined free capacit
 <tr data-provider="ovh"><td>OVHcloud AI Endpoints</td><td>No (keyless)</td><td class=num>17</td><td>Anonymous tier (chat + embeddings + Whisper)</td></tr>
 <tr data-provider="llm7"><td>LLM7</td><td>Optional</td><td class=num>4</td><td>~60/hour without a token</td></tr>
 <tr data-provider="kilo"><td>Kilo Gateway</td><td>No (keyless)</td><td class=num>7</td><td>Anonymous; ~200 req/hour per IP</td></tr>
-<tr data-provider="opencode"><td>OpenCode Zen</td><td>No (keyless)</td><td class=num>3</td><td>Anonymous promotional free routes</td></tr>
+<tr data-provider="opencode"><td>OpenCode Zen</td><td>No (keyless)</td><td class=num>0</td><td>Cataloged routes disabled by default pending opt-in</td></tr>
 <tr data-provider="groq"><td>Groq</td><td>Yes (free)</td><td class=num>12</td><td>~1,000 req/day (per model)</td></tr>
 <tr data-provider="cerebras"><td>Cerebras</td><td>Yes (free)</td><td class=num>2</td><td>~14,400 req/day (large cap)</td></tr>
 <tr data-provider="gemini"><td>Google Gemini</td><td>Yes (free)</td><td class=num>3</td><td>~1,500 req/day</td></tr>
@@ -75,8 +75,8 @@ freellmpool providers                                         # see which tiers 
 <h3>Which LLM providers have a free API tier?</h3>
 <p>As of 2026, free API tiers are offered by Groq, Cerebras, Google Gemini, NVIDIA, OpenRouter, GitHub
 Models, Cloudflare, Mistral, Cohere, SambaNova, Z.ai/Zhipu, Ollama Cloud, LongCat, LLM7, Pollinations,
-OVHcloud, Kilo Gateway, OpenCode Zen, and Hugging Face. Pollinations, OVHcloud, Kilo Gateway, and
-OpenCode Zen work with no API key.</p>
+OVHcloud, Kilo Gateway, OpenCode Zen, and Hugging Face. Pollinations, OVHcloud, and Kilo Gateway work
+with no API key by default; OpenCode Zen is cataloged keyless but disabled by default.</p>
 <h3>What's the free LLM API with the highest limit?</h3>
 <p>Among the common free tiers, Cerebras advertises one of the largest daily request caps, and providers
 like Groq and OpenRouter offer roughly a thousand requests/day on free models. Limits change often — pool
