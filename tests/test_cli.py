@@ -91,6 +91,40 @@ def test_cli_tokenmax_passes_timeout(monkeypatch):
     assert captured == {"timeout": 7.25, "max_tokens": 400}
 
 
+def test_cli_tokenmax_passes_timeout_to_synthesis(monkeypatch, capsys):
+    from freellmpool.cli import main
+    from freellmpool.router import Pool
+
+    captured = {}
+    fake_pool = SimpleNamespace(providers=[object()])
+
+    def fake_chat(messages, **kwargs):
+        captured["timeout"] = kwargs["timeout"]
+        captured["messages"] = messages
+        return Reply(text="summary", provider_id="fake", model="synth-model", raw={})
+
+    fake_pool.chat = fake_chat
+    monkeypatch.setattr(Pool, "from_default_config", classmethod(lambda cls: fake_pool))
+    monkeypatch.setattr("freellmpool.cli._read_stdin", lambda: "")
+    monkeypatch.setattr(
+        "freellmpool.tokenmax.select_targets",
+        lambda pool, messages, max_models: ([SimpleNamespace()], 1),
+    )
+    monkeypatch.setattr(
+        "freellmpool.tokenmax.fan_out",
+        lambda pool, messages, picks, *, max_tokens, timeout, progress=None: (
+            [("fake/model", "answer")],
+            [],
+        ),
+    )
+
+    assert main(["tokenmax", "hello", "--timeout", "11.5"]) == 0
+
+    assert captured["timeout"] == 11.5
+    assert "answer" in captured["messages"][0]["content"]
+    assert "SYNTHESIS" in capsys.readouterr().out
+
+
 def test_tokenmax_fan_out_passes_timeout_to_pool_chat():
     from freellmpool.tokenmax import fan_out
 
