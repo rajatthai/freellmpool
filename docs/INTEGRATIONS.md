@@ -45,6 +45,26 @@ spread quota). Full guide: <https://0xzr.github.io/freellmpool/run-opencode-on-f
 - [`integrations/opencode`](../integrations/opencode) — a server plugin adding
   `freellmpool_status` and `freellmpool_models` tools and a served-model toast.
 
+### metaswarm
+[`integrations/metaswarm`](../integrations/metaswarm) contains an experimental
+review-only adapter for metaswarm `external-tools`. It lets metaswarm call
+`freellmpool` as an adversarial reviewer or second opinion and returns the same
+JSON envelope style as other metaswarm adapters.
+
+Copy the adapter into your project:
+
+```bash
+mkdir -p .metaswarm/adapters
+cp integrations/metaswarm/freellmpool-review-adapter.sh .metaswarm/adapters/freellmpool.sh
+chmod +x .metaswarm/adapters/freellmpool.sh
+```
+
+Then add it to `.metaswarm/external-tools.yaml` as a `review` /
+`second_opinion` adapter. Configure at least one strong review provider
+(`MISTRAL_API_KEY`, `NVIDIA_API_KEY`, or `OPENROUTER_API_KEY`) before enabling it;
+without those keys it fails closed with `error_type: "auth_missing"` and makes no
+provider calls. Full setup: [`integrations/metaswarm/README.md`](../integrations/metaswarm/README.md).
+
 ### aider
 ```bash
 export OPENAI_API_BASE=http://localhost:8080/v1

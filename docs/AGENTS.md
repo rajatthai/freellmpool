@@ -62,6 +62,20 @@ codex --config model_provider=openai   # or set base URL in ~/.codex/config.toml
 > running Codex/agents on free inference for everyday coding; tool-calling and
 > richer Responses features are a work in progress.
 
+## Metaswarm external-tools review
+
+Metaswarm can use `freellmpool` as a review-only external tool. The integration
+is in [`integrations/metaswarm`](../integrations/metaswarm): copy
+`freellmpool-review-adapter.sh` into `.metaswarm/adapters/freellmpool.sh`, then
+add it to `.metaswarm/external-tools.yaml` with roles `review` and
+`second_opinion`.
+
+The adapter is deliberately not an implementer. It reviews a worktree diff
+against a spec/rubric, runs a configurable strong-model panel through
+`freellmpool`, and emits a metaswarm-style JSON envelope. If no strong provider
+key is configured (`MISTRAL_API_KEY`, `NVIDIA_API_KEY`, or `OPENROUTER_API_KEY`
+by default), it returns `error_type: "auth_missing"` before any provider call.
+
 ## aider (AI pair programming in your terminal)
 
 ```bash

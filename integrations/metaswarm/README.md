@@ -1,0 +1,112 @@
+# freellmpool review adapter for metaswarm
+
+This integration lets metaswarm use `freellmpool` as an independent
+review/second-opinion tool in an `external-tools` workflow.
+
+The adapter is **review-only**. `freellmpool` routes prompts to model providers;
+it does not own a worktree-editing contract, so implementation should stay with
+your coding agents while `freellmpool` supplies adversarial review.
+
+## Install
+
+Copy the adapter into your project and make it executable:
+
+```sh
+mkdir -p .metaswarm/adapters
+cp integrations/metaswarm/freellmpool-review-adapter.sh .metaswarm/adapters/freellmpool.sh
+chmod +x .metaswarm/adapters/freellmpool.sh
+```
+
+Install `freellmpool` where metaswarm can run it:
+
+```sh
+python -m pip install freellmpool
+```
+
+Configure at least one strong review provider. The default panel looks for
+Mistral, NVIDIA, or OpenRouter credentials:
+
+```sh
+export MISTRAL_API_KEY=...
+export NVIDIA_API_KEY=...
+export OPENROUTER_API_KEY=...
+```
+
+Alternatively use `freellmpool keys add <provider>` and keep the generated key
+inventory on the same machine that runs metaswarm.
+
+## Metaswarm config
+
+Add a review adapter entry to `.metaswarm/external-tools.yaml`:
+
+```yaml
+adapters:
+  freellmpool:
+    enabled: true
+    roles: ["review", "second_opinion"]
+    adapter_path: ".metaswarm/adapters/freellmpool.sh"
+    model: "strong-long-context"
+    routing: "quality"
+    review_mode: "strong"
+    strong_providers: ["mistral", "nvidia", "openrouter"]
+    strong_models:
+      - "nvidia/moonshotai/kimi-k2.6"
+      - "nvidia/z-ai/glm-5.1"
+      - "nvidia/mistralai/mistral-large-3-675b-instruct-2512"
+      - "mistral/mistral-large-latest"
+      - "nvidia/nvidia/nemotron-3-ultra-550b-a55b"
+      - "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
+      - "openrouter/openai/gpt-oss-120b:free"
+    max_models: 7
+    max_tokens: 65536
+    provider_timeout_seconds: 600
+    synthesis_timeout_seconds: 600
+    timeout_seconds: 0
+    sandbox: none
+
+routing:
+  review_order: ["freellmpool"]
+  second_opinion: "freellmpool"
+```
+
+The exact model list is intentionally configurable. Free-tier provider health
+changes, so override `FREELLMPOOL_STRONG_MODELS` or the YAML value when a model is
+slow, unavailable, or no longer useful for review.
+
+## Commands
+
+The adapter implements the metaswarm-style command surface:
+
+```sh
+.metaswarm/adapters/freellmpool.sh health
+
+.metaswarm/adapters/freellmpool.sh review \
+  --worktree /path/to/worktree \
+  --rubric-file /path/to/rubric.md \
+  --spec-file /path/to/spec.md \
+  --timeout 600
+```
+
+Every command returns a JSON envelope with the tool name, command, exit code,
+raw log path, and `error_type` when a failure is classified.
+
+When no strong provider key is configured, `review` fails closed with
+`error_type: "auth_missing"` before making provider calls. The raw log lists the
+required environment variable names but not secret values.
+
+## Environment
+
+| Variable | Purpose |
+| --- | --- |
+| `FREELLMPOOL_CMD` | Path to the `freellmpool` executable. |
+| `FREELLMPOOL_REVIEW_MODE` | `strong` (default), `tokenmax`, or `ask`. |
+| `FREELLMPOOL_STRONG_MODELS` | Comma-separated exact provider/model ids for strong mode. |
+| `FREELLMPOOL_STRONG_PROVIDERS` | Provider ids that must be configured for ready health. |
+| `FREELLMPOOL_MAX_MODELS` | Model cap for strong/tokenmax review. |
+| `FREELLMPOOL_MAX_TOKENS` | Max output tokens per model. |
+| `FREELLMPOOL_PROVIDER_TIMEOUT_SECONDS` | Per-model upstream timeout. |
+| `FREELLMPOOL_SYNTHESIS_TIMEOUT_SECONDS` | Synthesis call timeout. |
+| `METASWARM_LOG_DIR` | Directory for raw review logs. |
+
+Use provider keys from your environment (`MISTRAL_API_KEY`, `NVIDIA_API_KEY`,
+`OPENROUTER_API_KEY`) or from `freellmpool keys add`.

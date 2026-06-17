@@ -168,7 +168,9 @@ Endpoints: `/v1/chat/completions` (token streaming, tool calling), `/v1/embeddin
 `/v1/audio/transcriptions` (Whisper, multipart upload), `/v1/responses`, `/v1/messages`,
 `/v1/models`, and a `/dashboard` page showing usage.
 Setup snippets for specific tools are in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)
-and [docs/AGENTS.md](docs/AGENTS.md).
+and [docs/AGENTS.md](docs/AGENTS.md). The repo also includes an experimental
+[metaswarm review adapter](integrations/metaswarm) for using `freellmpool` as an
+external-tools reviewer/second opinion.
 
 ## As a library
 

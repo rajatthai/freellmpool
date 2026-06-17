@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Experimental metaswarm review adapter integration, with setup docs and no-key
+  smoke coverage for fail-closed `auth_missing` behavior.
+
 ## [0.11.4] — 2026-06-17
 
 MCP Registry verification metadata release.
