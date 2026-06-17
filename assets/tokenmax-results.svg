@@ -23,7 +23,7 @@
   <text class="ink muted tiny" x="108" y="374">238 enabled chat routes today</text>
 
   <rect class="card" x="440" y="178" width="320" height="220" rx="18"/>
-  <text class="ink metric" x="474" y="292">18</text>
+  <text class="ink metric" x="474" y="292">19</text>
   <text class="ink label" x="478" y="340">providers</text>
   <text class="ink muted tiny" x="478" y="374">Pollinations, OVHcloud, Groq...</text>
 
