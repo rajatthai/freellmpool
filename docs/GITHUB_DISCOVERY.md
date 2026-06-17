@@ -14,7 +14,7 @@ gh repo view 0xzr/freellmpool --json description,repositoryTopics,url,isPrivate
 
 Current About description:
 
-> Pool the free tiers of 18 LLM providers (Groq, Cerebras, NVIDIA NIM, Gemini, OpenRouter, Cloudflare, Hugging Face...) behind one OpenAI-compatible /v1 endpoint. Free, zero-config, automatic failover. Codex/agent ready.
+> Pool the free tiers of 19 LLM providers (Groq, Cerebras, NVIDIA NIM, Gemini, OpenRouter, Cloudflare, Hugging Face...) behind one OpenAI-compatible /v1 endpoint. Free, zero-config, automatic failover. Codex/agent ready.
 
 Current topics are already at GitHub's 20-topic limit:
 
@@ -31,7 +31,7 @@ P9 gap topics missing from the live repo:
 
 Recommended description (107 chars):
 
-> Free LLM API pool: 18 LLM providers, 200+ live models, 300+ cataloged models, zero keys to start, failover.
+> Free LLM API pool: 19 LLM providers, 200+ live models, 300+ cataloged models, zero keys to start, failover.
 
 Recommended 20-topic set:
 
@@ -47,7 +47,7 @@ Operator command after merge:
 
 ```bash
 gh repo edit 0xzr/freellmpool \
-  --description "Free LLM API pool: 18 LLM providers, 200+ live models, 300+ cataloged models, zero keys to start, failover." \
+  --description "Free LLM API pool: 19 LLM providers, 200+ live models, 300+ cataloged models, zero keys to start, failover." \
   --remove-topic ai \
   --remove-topic gateway \
   --remove-topic llm \

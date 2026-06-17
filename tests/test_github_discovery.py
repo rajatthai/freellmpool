@@ -66,7 +66,7 @@ def test_github_discovery_description_stays_within_about_limit():
     assert len(description) == expected_len
     assert len(description) <= 120
     assert "zero keys to start" in description
-    assert "18 LLM providers" in description
+    assert "19 LLM providers" in description
     assert "failover" in description
 
 
@@ -94,7 +94,7 @@ def test_social_preview_svg_matches_github_preview_requirements():
 
     for text in (
         "zero keys",
-        "18 providers",
+        "19 providers",
         "200+ models",
         "OpenAI +",
         "Anthropic proxy",

@@ -36,7 +36,7 @@ def test_server_json_is_registry_ready_for_stdio_package():
         "url": "https://github.com/0xzr/freellmpool",
         "source": "github",
     }
-    assert "18 LLM providers" in server["description"]
+    assert "19 LLM providers" in server["description"]
     assert "tokenmax" in server["description"]
     assert package["registryType"] == "pypi"
     assert package["identifier"] == "freellmpool"

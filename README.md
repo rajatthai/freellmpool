@@ -4,9 +4,9 @@
 
 ![freellmpool tokenmax terminal demo](assets/demo.svg)
 
-![200+ models, 18 providers, $0 to start](assets/tokenmax-results.svg)
+![200+ models, 19 providers, $0 to start](assets/tokenmax-results.svg)
 
-Pool the free tiers of 18 LLM providers (200+ live-validated, 300+ cataloged
+Pool the free tiers of 19 LLM providers (200+ live-validated, 300+ cataloged
 models) behind one OpenAI-compatible endpoint — as a CLI, a Python library, or a
 local proxy. Works with no API keys.
 
@@ -39,8 +39,9 @@ rate limits, and daily cap. freellmpool puts them in one pool: it sends each
 request to a provider you have access to, fails over to the next when one is rate
 limited or down, and tracks per-day usage so you get the most out of every tier.
 
-Several providers (Pollinations, OVHcloud, and Kilo Gateway) need no API key, so
-the quickstart above answers immediately.
+Several providers (Pollinations, OVHcloud, Kilo Gateway, and OpenCode Zen) need
+no API key, and LLM7 works without one, so the quickstart above answers
+immediately.
 
 Add keys for the other providers to unlock more models and higher limits.
 
@@ -355,7 +356,7 @@ Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 | Tool | Keyless start | # providers | Failover | MCP server | CLI | Transcription | Local/self-hosted | License |
 |---|---|---:|---|---|---|---|---|---|
-| **freellmpool** | Yes: Pollinations, OVHcloud, Kilo Gateway; LLM7 is key-optional | 18 built-in chat providers | Yes: tries the next provider on rate limits, timeouts, 5xx, empty replies, and transport errors | Yes: `freellmpool mcp` | Yes: `freellmpool ask`, `tokenmax`, `providers`, `proxy`, and more | Yes: OpenAI-compatible `/v1/audio/transcriptions` with provider failover | Yes: local Python package and local proxy | MIT |
+| **freellmpool** | Yes: Pollinations, OVHcloud, Kilo Gateway, OpenCode Zen; LLM7 is key-optional | 19 built-in chat providers | Yes: tries the next provider on rate limits, timeouts, 5xx, empty replies, and transport errors | Yes: `freellmpool mcp` | Yes: `freellmpool ask`, `tokenmax`, `providers`, `proxy`, and more | Yes: OpenAI-compatible `/v1/audio/transcriptions` with provider failover | Yes: local Python package and local proxy | MIT |
 | OpenRouter free models | No: OpenRouter account/API key required | One hosted OpenRouter account routing across many upstreams; the free-model router currently lists free variants | Yes: OpenRouter handles provider routing/fallbacks | Not a native MCP server; OpenRouter docs show MCP-client/tool patterns | No first-party local CLI in the docs checked | Yes: OpenRouter now documents audio transcription APIs | No: hosted service | Proprietary service |
 | LiteLLM | No: bring provider keys or hosted LiteLLM credentials | 100+ LLM providers | Yes: router/fallbacks, including transcription fallbacks | Yes: LiteLLM Proxy includes an MCP Gateway | Yes: SDK/proxy command surface, not a one-shot free-model CLI | Yes: `/audio/transcriptions` support | Yes: self-host the proxy or use hosted LiteLLM | MIT for core repo; commercial license for enterprise-only pieces |
 | FreeLLMAPI | No: add your own free-tier provider keys; keyless providers can be configured after setup | 16 free-tier providers plus custom OpenAI-compatible endpoints | Yes: fallback chain on 429, 5xx, and timeouts | No native MCP server in the README checked | Dashboard/server, desktop app, and Docker; no first-class one-shot CLI in the README checked | No: `/v1/audio/*` is listed as not yet supported | Yes: self-hosted Node/Docker proxy | MIT |
@@ -375,7 +376,7 @@ audio transcription docs; FreeLLMAPI's README.
 
 **Is there a free, OpenAI-compatible LLM API gateway?** Yes — freellmpool is a free,
 MIT-licensed gateway that exposes one OpenAI-compatible endpoint backed by the free
-tiers of 18 providers. `pip install freellmpool` and point any OpenAI client at the
+tiers of 19 providers. `pip install freellmpool` and point any OpenAI client at the
 local proxy.
 
 **How do I use multiple free LLM APIs at once?** freellmpool pools them: each request
@@ -389,9 +390,10 @@ Code, set `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` so `/v1/models` is disc
 through the Anthropic bridge. See `freellmpool code <agent>`. (Claude Code path is
 experimental: text + tools, no vision.)
 
-**Do I need an API key?** No — Pollinations, OVHcloud, and Kilo Gateway work with no key, so a fresh
-install answers immediately. Add free keys for the other providers for more models and
-higher limits.
+**Do I need an API key?** No — Pollinations, OVHcloud, Kilo Gateway, and OpenCode
+Zen work with no key, and LLM7 is key-optional, so a fresh install answers
+immediately. Add free keys for the other providers for more models and higher
+limits.
 
 **Is it free and open source?** Yes, MIT-licensed. More at the
 [project page](https://0xzr.github.io/freellmpool/).
