@@ -71,6 +71,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
             providers=provider_filter,
             max_tokens=args.max_tokens,
             temperature=args.temperature,
+            timeout=args.timeout,
         )
     except NoProvidersConfigured as exc:
         print(f"freellmpool: {exc}", file=sys.stderr)
@@ -127,7 +128,13 @@ def cmd_tokenmax(args: argparse.Namespace) -> int:
 
     label = f"TOKENMAXXING {len(picks)} models across {n_providers} providers"
     with RainbowThrob(label):
-        answered, failed = fan_out(pool, msgs, picks, max_tokens=args.max_tokens)
+        answered, failed = fan_out(
+            pool,
+            msgs,
+            picks,
+            max_tokens=args.max_tokens,
+            timeout=args.timeout,
+        )
 
     print(
         f"{RAINBOW_BANNER} TOKENMAX — {len(picks)} models / {n_providers} providers · "
@@ -148,7 +155,10 @@ def cmd_tokenmax(args: argparse.Namespace) -> int:
         )
         try:
             syn = pool.chat(
-                [{"role": "user", "content": syn_prompt}], routing="quality", max_tokens=1024
+                [{"role": "user", "content": syn_prompt}],
+                routing="quality",
+                max_tokens=1024,
+                timeout=args.timeout,
             )
             print(f"{RAINBOW_BANNER} SYNTHESIS — via {syn.provider_id}/{syn.model}\n{syn.text}")
         except Exception as exc:  # noqa: BLE001 — synthesis is a bonus, never fatal
@@ -857,6 +867,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ask.add_argument("-p", "--providers", help="comma-separated provider ids to allow")
     p_ask.add_argument("--max-tokens", type=int, default=1024)
     p_ask.add_argument("--temperature", type=float, default=0.0)
+    p_ask.add_argument("--timeout", type=float, default=90.0, help="upstream provider timeout seconds")
     p_ask.add_argument(
         "--json", action="store_true", help="ask for JSON output and strip code fences"
     )
@@ -874,6 +885,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_tokenmax.add_argument(
         "--max-tokens", type=int, default=400, help="max output tokens per model"
+    )
+    p_tokenmax.add_argument(
+        "--timeout", type=float, default=90.0, help="upstream provider timeout seconds"
     )
     p_tokenmax.add_argument(
         "--no-synthesize",

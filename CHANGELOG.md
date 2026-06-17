@@ -18,6 +18,8 @@ Launch polish and packaging metadata release.
 - Contributor templates, PR template, and ready-to-file good-first-issue drafts
   for newcomer-sized tasks.
 - Release checklist for the operator-run tag/build/publish flow.
+- `freellmpool ask --timeout` and `freellmpool tokenmax --timeout` so slow
+  upstreams can be bounded explicitly from the CLI.
 
 ### Changed
 - Public provider/model counts are now checked from the provider catalog by

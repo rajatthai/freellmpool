@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from freellmpool.cli import _strip_fences
+from freellmpool.models import Reply
 
 
 def test_strip_plain_json():
@@ -39,6 +42,81 @@ def test_cli_tokenmax_synthesizes_by_default(providers, env, quota, monkeypatch,
     assert main(["tokenmax", "hi", "--max-models", "2"]) == 0
     out = capsys.readouterr().out
     assert "SYNTHESIS" in out  # the verdict is produced unless --no-synthesize
+
+
+def test_cli_ask_passes_timeout(monkeypatch, capsys):
+    from freellmpool.cli import main
+    from freellmpool.router import Pool
+
+    captured = {}
+
+    class FakePool:
+        def ask(self, prompt, **kwargs):
+            captured["prompt"] = prompt
+            captured["timeout"] = kwargs["timeout"]
+            return Reply(text="ok", provider_id="fake", model="fake-model", raw={})
+
+    monkeypatch.setattr(Pool, "from_default_config", classmethod(lambda cls: FakePool()))
+    monkeypatch.setattr("freellmpool.cli._read_stdin", lambda: "")
+
+    assert main(["ask", "hello", "--timeout", "12.5"]) == 0
+
+    assert captured == {"prompt": "hello", "timeout": 12.5}
+    assert capsys.readouterr().out.strip() == "ok"
+
+
+def test_cli_tokenmax_passes_timeout(monkeypatch):
+    from freellmpool.cli import main
+    from freellmpool.router import Pool
+
+    captured = {}
+    fake_pool = SimpleNamespace(providers=[object()])
+
+    monkeypatch.setattr(Pool, "from_default_config", classmethod(lambda cls: fake_pool))
+    monkeypatch.setattr("freellmpool.cli._read_stdin", lambda: "")
+    monkeypatch.setattr(
+        "freellmpool.tokenmax.select_targets",
+        lambda pool, messages, max_models: ([SimpleNamespace()], 1),
+    )
+
+    def fake_fan_out(pool, messages, picks, *, max_tokens, timeout, progress=None):
+        captured["timeout"] = timeout
+        captured["max_tokens"] = max_tokens
+        return [("fake/model", "ok")], []
+
+    monkeypatch.setattr("freellmpool.tokenmax.fan_out", fake_fan_out)
+
+    assert main(["tokenmax", "hello", "--timeout", "7.25", "--no-synthesize"]) == 0
+
+    assert captured == {"timeout": 7.25, "max_tokens": 400}
+
+
+def test_tokenmax_fan_out_passes_timeout_to_pool_chat():
+    from freellmpool.tokenmax import fan_out
+
+    captured = {}
+    target = SimpleNamespace(provider=SimpleNamespace(id="fake"), model="model-a")
+
+    class FakePool:
+        def chat(self, messages, **kwargs):
+            captured["messages"] = messages
+            captured["timeout"] = kwargs["timeout"]
+            return Reply(text="ok", provider_id="fake", model="model-a", raw={})
+
+    answered, failed = fan_out(
+        FakePool(),
+        [{"role": "user", "content": "hello"}],
+        [target],
+        max_tokens=50,
+        timeout=3.5,
+    )
+
+    assert answered == [("fake/model-a", "ok")]
+    assert failed == []
+    assert captured == {
+        "messages": [{"role": "user", "content": "hello"}],
+        "timeout": 3.5,
+    }
 
 
 def test_strip_fenced_json():
