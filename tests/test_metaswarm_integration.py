@@ -243,6 +243,137 @@ def test_metaswarm_adapter_invalid_provider_key_fails_closed(tmp_path: Path) -> 
     assert not fake_log.exists()
 
 
+def test_metaswarm_adapter_partial_strong_config_fails_closed(tmp_path: Path) -> None:
+    env = _base_env(tmp_path)
+    env["MISTRAL_API_KEY"] = "mistral-test-key"
+    env["FREELLMPOOL_STRONG_PROVIDERS"] = "mistral,nvidia"
+    env["FREELLMPOOL_STRONG_MODELS"] = "mistral/mistral-large-latest,nvidia/test-model"
+    fake_log = tmp_path / "fake-called.log"
+    env["FREELLMPOOL_CMD"] = str(
+        _fake_freellmpool(
+            tmp_path,
+            f'printf "%s\\n" "$*" >> "{fake_log}"\nexit 99',
+        )
+    )
+    repo = _dirty_repo(tmp_path)
+    spec, rubric = _review_files(tmp_path)
+
+    result = subprocess.run(
+        [
+            str(ADAPTER),
+            "review",
+            "--worktree",
+            str(repo),
+            "--rubric-file",
+            str(rubric),
+            "--spec-file",
+            str(spec),
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["error_type"] == "auth_missing"
+    assert "nvidia" in payload["raw_log"]
+    assert not fake_log.exists()
+
+
+def test_metaswarm_adapter_empty_diff_fails_closed(tmp_path: Path) -> None:
+    env = _base_env(tmp_path)
+    env["MISTRAL_API_KEY"] = "mistral-test-key"
+    env["FREELLMPOOL_STRONG_PROVIDERS"] = "mistral"
+    env["FREELLMPOOL_STRONG_MODELS"] = "mistral/mistral-large-latest"
+    fake_log = tmp_path / "fake-called.log"
+    env["FREELLMPOOL_CMD"] = str(
+        _fake_freellmpool(
+            tmp_path,
+            f'printf "%s\\n" "$*" >> "{fake_log}"\nexit 99',
+        )
+    )
+    repo = _dirty_repo(tmp_path)
+    subprocess.run(["git", "checkout", "--", "example.txt"], cwd=repo, check=True)
+    spec, rubric = _review_files(tmp_path)
+
+    result = subprocess.run(
+        [
+            str(ADAPTER),
+            "review",
+            "--worktree",
+            str(repo),
+            "--rubric-file",
+            str(rubric),
+            "--spec-file",
+            str(spec),
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["error_type"] == "empty_diff"
+    assert "No git diff was captured" in payload["raw_log"]
+    assert not fake_log.exists()
+
+
+def test_metaswarm_adapter_synthesis_failure_fails_closed(tmp_path: Path) -> None:
+    env = _base_env(tmp_path)
+    env["MISTRAL_API_KEY"] = "mistral-test-key"
+    env["FREELLMPOOL_STRONG_PROVIDERS"] = "mistral"
+    env["FREELLMPOOL_STRONG_MODELS"] = "mistral/mistral-large-latest"
+    count_file = tmp_path / "fake-count.txt"
+    env["FREELLMPOOL_CMD"] = str(
+        _fake_freellmpool(
+            tmp_path,
+            f"""
+count=0
+if [[ -f "{count_file}" ]]; then
+  count="$(cat "{count_file}")"
+fi
+count=$((count + 1))
+printf '%s\\n' "$count" > "{count_file}"
+if [[ "$count" -eq 1 ]]; then
+  printf '{{"verdict":"PASS","findings":[],"summary":"review ok"}}\\n'
+  exit 0
+fi
+printf 'context length exceeded during synthesis\\n' >&2
+exit 1
+""",
+        )
+    )
+    repo = _dirty_repo(tmp_path)
+    spec, rubric = _review_files(tmp_path)
+
+    result = subprocess.run(
+        [
+            str(ADAPTER),
+            "review",
+            "--worktree",
+            str(repo),
+            "--rubric-file",
+            str(rubric),
+            "--spec-file",
+            str(spec),
+        ],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["error_type"] == "context_too_large"
+    assert "synthesis unavailable" in payload["raw_log"]
+    assert count_file.read_text(encoding="utf-8").strip() == "2"
+
+
 def test_metaswarm_adapter_implement_is_unsupported(tmp_path: Path) -> None:
     result = subprocess.run(
         [str(ADAPTER), "implement", "--attempt", "2"],

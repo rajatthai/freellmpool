@@ -23,8 +23,8 @@ Install `freellmpool` where metaswarm can run it:
 python -m pip install freellmpool
 ```
 
-Configure at least one strong review provider. The default panel looks for
-Mistral, NVIDIA, or OpenRouter credentials:
+Configure the strong review providers used by your model list. The default panel
+spans Mistral, NVIDIA, and OpenRouter credentials:
 
 ```sh
 export MISTRAL_API_KEY=...
@@ -33,7 +33,9 @@ export OPENROUTER_API_KEY=...
 ```
 
 Alternatively use `freellmpool keys add <provider>` and keep the generated key
-inventory on the same machine that runs metaswarm.
+inventory on the same machine that runs metaswarm. To run with only one provider,
+restrict `FREELLMPOOL_STRONG_PROVIDERS` and `FREELLMPOOL_STRONG_MODELS` to that
+provider before dispatch.
 
 ## Metaswarm config
 
@@ -94,9 +96,10 @@ The adapter implements the metaswarm-style command surface:
 Every command returns a JSON envelope with the tool name, command, exit code,
 raw log path, and `error_type` when a failure is classified.
 
-When no strong provider key is configured, `review` fails closed with
+When no required strong provider key is configured, or when the strong model list
+contains a provider without a configured key, `review` fails closed with
 `error_type: "auth_missing"` before making provider calls. The raw log lists the
-required environment variable names but not secret values.
+required environment variable names or provider ids but not secret values.
 
 ## Environment
 

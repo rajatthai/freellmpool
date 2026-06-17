@@ -312,6 +312,22 @@ add_provider_key_env() {
   KEYED_ENV+=("$name=$value")
 }
 
+missing_strong_model_providers() {
+  local configured_providers="${1:-}"
+  python3 - "$STRONG_MODELS" "$configured_providers" <<'PY'
+import sys
+
+models = [item.strip() for item in sys.argv[1].split(",") if item.strip()]
+configured = {item.strip() for item in sys.argv[2].split(",") if item.strip()}
+missing = sorted({
+    model.split("/", 1)[0]
+    for model in models
+    if "/" in model and model.split("/", 1)[0] not in configured
+})
+print(",".join(missing))
+PY
+}
+
 count_configured_strong_providers() {
   python3 - "$STRONG_PROVIDERS" <<'PY'
 import sys
@@ -453,12 +469,14 @@ cmd_review() {
   fi
 
   local strong_provider_info strong_provider_count
+  local configured_strong_providers=""
   strong_provider_info="$(count_configured_strong_providers 2>/dev/null || printf '0\n')"
   strong_provider_count="$(printf '%s\n' "$strong_provider_info" | sed -n '1p')"
   strong_provider_count="${strong_provider_count:-0}"
   case "$strong_provider_count" in
     ''|*[!0-9]*) strong_provider_count="0" ;;
   esac
+  configured_strong_providers="$(printf '%s\n' "$strong_provider_info" | sed -n '2p')"
   if [[ "$strong_provider_count" -eq 0 ]]; then
     raw_log_file="${tmp_dir}/missing-strong-provider-keys.txt"
     printf 'No configured strong freellmpool providers. Configure at least one of: %s. For the default metaswarm review panel, set one or more of MISTRAL_API_KEY, NVIDIA_API_KEY, OPENROUTER_API_KEY, or use freellmpool keys add.\n' "$STRONG_PROVIDERS" >"$raw_log_file"
@@ -469,6 +487,20 @@ cmd_review() {
     rm -rf "$tmp_dir"
     return 1
   fi
+  if [[ "$REVIEW_MODE" == "strong" || "$REVIEW_MODE" == "strong-long-context" ]]; then
+    local missing_model_providers
+    missing_model_providers="$(missing_strong_model_providers "$configured_strong_providers")"
+    if [[ -n "$missing_model_providers" ]]; then
+      raw_log_file="${tmp_dir}/missing-requested-provider-keys.txt"
+      printf 'Strong review model list includes providers without configured keys: %s. Configure those provider keys or restrict FREELLMPOOL_STRONG_MODELS to configured providers: %s.\n' "$missing_model_providers" "$configured_strong_providers" >"$raw_log_file"
+      local partial_auth_json
+      partial_auth_json="$(emit_error "review" "$DEFAULT_MODEL" "$XT_ATTEMPT" 2 "" 0 "$raw_log_file" "auth_missing")"
+      log_session "$partial_auth_json"
+      printf '%s\n' "$partial_auth_json"
+      rm -rf "$tmp_dir"
+      return 1
+    fi
+  fi
 
   local diff_content rubric_content spec_content system_prompt review_prompt review_prompt_file
   diff_content="$(git -C "$XT_WORKTREE" diff HEAD 2>/dev/null || true)"
@@ -476,7 +508,17 @@ cmd_review() {
     diff_content="$(git -C "$XT_WORKTREE" diff HEAD~1 HEAD 2>/dev/null || true)"
   fi
   if [[ -z "$diff_content" ]]; then
-    diff_content="No git diff was captured. Review the specification and rubric for process gaps only."
+    diff_content="$(git -C "$XT_WORKTREE" diff --cached 2>/dev/null || true)"
+  fi
+  if [[ -z "$diff_content" ]]; then
+    raw_log_file="${tmp_dir}/empty-diff.txt"
+    printf 'No git diff was captured from worktree %s; refusing to run an external review on an empty payload.\n' "$XT_WORKTREE" >"$raw_log_file"
+    local empty_diff_json
+    empty_diff_json="$(emit_error "review" "$DEFAULT_MODEL" "$XT_ATTEMPT" 2 "" 0 "$raw_log_file" "empty_diff")"
+    log_session "$empty_diff_json"
+    printf '%s\n' "$empty_diff_json"
+    rm -rf "$tmp_dir"
+    return 1
   fi
   rubric_content="$(cat "$XT_RUBRIC_FILE")"
   spec_content="$(cat "$XT_SPEC_FILE")"
@@ -608,6 +650,17 @@ PROMPT_EOF
           cat "$synthesis_stdout"
         else
           printf 'synthesis unavailable; use individual reviews above. exit_code=%s error_type=%s\n' "$synthesis_exit" "$(classify_error "$synthesis_exit" "$synthesis_stderr")"
+          if [[ -s "$synthesis_stderr" ]]; then
+            {
+              printf '\n### SYNTHESIS STDERR\n'
+              cat "$synthesis_stderr"
+            } >>"$stderr_file"
+          fi
+          if [[ "$synthesis_exit" -eq 0 ]]; then
+            exit_code=1
+          else
+            exit_code="$synthesis_exit"
+          fi
         fi
         printf '\n'
       } >>"$stdout_file"
@@ -682,6 +735,9 @@ case "$command" in
   review)
     cmd_review "$@"
     ;;
+  second_opinion)
+    cmd_review "$@"
+    ;;
   *)
     cat >&2 <<USAGE
 Usage: $(basename "$0") <command> [options]
@@ -689,6 +745,7 @@ Usage: $(basename "$0") <command> [options]
 Commands:
   health      Check freellmpool CLI and configured strong providers.
   review      Run freellmpool as a metaswarm adversarial reviewer.
+  second_opinion  Alias for review when a dispatcher uses role names as commands.
   implement   Unsupported; this adapter is review-only.
 
 Review options:
