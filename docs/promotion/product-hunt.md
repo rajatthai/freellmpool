@@ -44,7 +44,8 @@ GitHub: https://github.com/0xzr/freellmpool
 ## Gallery asset ideas
 
 - `assets/social-preview.png`
-- `assets/demo.svg`
+- `assets/demo.png`
+- `assets/tokenmax-results.png`
 - screenshot of `freellmpool providers`
 - screenshot of `freellmpool tokenmax`
 - diagram: CLI / proxy / MCP -> router -> provider free tiers

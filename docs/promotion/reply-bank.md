@@ -30,6 +30,13 @@ LiteLLM is the mature bring-your-own-keys proxy/SDK. `freellmpool` is narrower:
 it focuses on pooling legitimate free tiers, first-run keyless usage, a simple
 CLI, and the free-tier catalog.
 
+## Why not Ollama, LM Studio, or LocalAI?
+
+Those are for running or serving models locally. `freellmpool` is local software
+that routes to hosted upstream providers' free tiers. Use local models for
+private/offline work; use freellmpool when you want a convenient fallback,
+second opinion, or OpenAI-compatible proxy over hosted free routes.
+
 ## Why not FreeLLMAPI?
 
 FreeLLMAPI predates this project. The overlap is independent convergence:
@@ -53,6 +60,95 @@ triage, and side tasks. Hard reasoning still benefits from frontier models.
 Yes, through the local proxy. It speaks the OpenAI API and has an experimental
 Anthropic-compatible path. There are recipes for Codex, Claude Code, aider,
 Cline, Continue, Cursor, and OpenCode.
+
+## How do I use it with OpenCode?
+
+Start the proxy:
+
+```bash
+freellmpool proxy --port 8080
+```
+
+Then add a custom OpenAI-compatible provider in `opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "freellmpool/auto",
+  "provider": {
+    "freellmpool": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "http://localhost:8080/v1" },
+      "models": { "auto": {}, "fast": {}, "quality": {}, "fair": {} }
+    }
+  }
+}
+```
+
+This is for the OpenCode app/CLI. OpenCode Zen routes are cataloged separately
+and disabled by default pending opt-in and provider-policy review.
+
+## How do I use it with Claude Code, Cursor, or other MCP clients?
+
+Use the local stdio MCP server. It is started by the MCP host; it is not a
+hosted/remote MCP service:
+
+```bash
+claude mcp add freellmpool -- freellmpool mcp
+```
+
+For JSON MCP configs:
+
+```json
+{
+  "mcpServers": {
+    "freellmpool": {
+      "command": "freellmpool",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+The useful tools are `free_llm_ask`, `free_llm_panel`, `tokenmax`,
+`free_llm_route`, `free_llm_models`, `free_llm_quota`, and `free_llm_stats`.
+
+## How do I use it with metaswarm?
+
+Use the review-only adapter in `integrations/metaswarm`. It is meant for review
+and second opinions, not implementation:
+
+```bash
+mkdir -p .metaswarm/adapters
+cp integrations/metaswarm/freellmpool-review-adapter.sh .metaswarm/adapters/freellmpool.sh
+chmod +x .metaswarm/adapters/freellmpool.sh
+```
+
+Then add the adapter to `.metaswarm/external-tools.yaml` with roles
+`["review", "second_opinion"]`. Configure at least one strong review provider
+key first; otherwise it fails closed with `error_type: "auth_missing"`. That
+stops the review call rather than silently substituting a different provider.
+
+## What captions should I use for the images?
+
+- `assets/demo.png`: "Terminal demo showing freellmpool routing through its
+  local proxy and reporting catalog/provider status." Alt text: "Screenshot of a
+  terminal running freellmpool with proxy, provider catalog, and routing output."
+- `assets/tokenmax-results.png`: "tokenmax summary card showing enabled routes,
+  cataloged providers, keyless start, and model fan-out behavior." Alt text:
+  "Social card for freellmpool tokenmax with stats for enabled routes, cataloged
+  providers, and keyless start."
+- `assets/social-preview.png`: "Project preview card for freellmpool: free LLM
+  API pool for agents and local proxies." Alt text: "Dark social preview image
+  for freellmpool with feature labels for keyless start, 19 providers, OpenAI
+  proxy, MCP, transcription, and tokenmax."
+
+## Can I use it with Cline or Cursor's OpenAI-compatible settings?
+
+Yes. Start `freellmpool proxy --port 8080`, set the base URL to
+`http://localhost:8080/v1`, set the API key to any placeholder value, and use
+model `auto`. Treat it as a free-tier fallback for small tasks, not as a
+replacement for strong paid coding models.
 
 ## What should contributors help with?
 

@@ -1,5 +1,14 @@
 # Reddit / open-source communities draft
 
+Primary targets: `r/opensource`, `r/github` self-promotion megathread,
+`r/Python` Showcase, and self-promotion threads where allowed.
+
+Do not use this as a generic `r/programming` post. The safer programming angle
+is a separate technical article after the project has more adoption data.
+
+For `r/Python`, restructure the body under the required sections:
+"What My Project Does", "Target Audience", and "Comparison".
+
 ## Title options
 
 - freellmpool: an MIT-licensed local gateway for pooling free LLM API tiers
@@ -15,7 +24,8 @@ GitHub: https://github.com/0xzr/freellmpool
 
 It is meant for developers who want free-tier inference capacity for scripts,
 coding agents, docs, triage, and side tasks without wiring every provider
-separately.
+separately. It is also a contribution-friendly catalog project: provider model
+ids, limits, and availability change often, so small verified fixes matter.
 
 Features:
 
@@ -44,4 +54,6 @@ status docs, capacity fixtures, and agent recipe tests:
 
 https://github.com/0xzr/freellmpool/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22
 
-Feedback and small provider-catalog fixes would be useful.
+Feedback and small provider-catalog fixes would be useful. The best
+contributions right now are provider drift reports, missing free-tier providers,
+CLI JSON output improvements, and more integration recipes.

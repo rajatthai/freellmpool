@@ -52,6 +52,41 @@ reports and small catalog fixes are especially welcome.
 
 https://github.com/0xzr/freellmpool
 
+## X / Bluesky OpenCode-specific
+
+I wired OpenCode to `freellmpool` as a local OpenAI-compatible provider:
+
+- `freellmpool proxy --port 8080`
+- model picker: `freellmpool/auto|fast|quality|fair`
+- routes across legitimate hosted free tiers
+- optional OpenCode TUI/status plugins
+
+Repo/config:
+https://github.com/0xzr/freellmpool
+
+## X / Bluesky MCP-specific
+
+`freellmpool mcp` lets Claude Code, Claude Desktop, Cursor, and other MCP
+clients hand off small tasks to free LLM tiers:
+
+- one-shot asks
+- multi-model panels
+- tokenmax fan-out
+- route previews
+- quota/status tools
+
+https://github.com/0xzr/freellmpool
+
+## X / Bluesky metaswarm-specific
+
+I added a review-only metaswarm adapter for `freellmpool`.
+
+Coding agents still implement. freellmpool supplies cheap independent review and
+second-opinion panels across free-tier providers, with fail-closed auth checks
+for strong review routes.
+
+https://github.com/0xzr/freellmpool
+
 ## LinkedIn
 
 I released `freellmpool`, an MIT-licensed Python tool for pooling free LLM API

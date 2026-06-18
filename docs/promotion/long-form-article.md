@@ -61,6 +61,9 @@ For MCP clients, it can run over stdio:
 freellmpool mcp
 ```
 
+This is local stdio MCP. The MCP host starts `freellmpool mcp` as a local
+process; freellmpool is not a hosted remote MCP service.
+
 The tool surface includes one-shot asks, multi-model panels, `tokenmax` fan-out,
 routing previews, model listing, quota status, and lifetime stats.
 
@@ -98,6 +101,69 @@ I have found it most useful for:
 - "second opinion" panels across several smaller models;
 - MCP tool calls where a free model is good enough.
 
+## Concrete workflows
+
+### OpenCode
+
+OpenCode can point at the local OpenAI-compatible proxy:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "freellmpool/auto",
+  "provider": {
+    "freellmpool": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "http://localhost:8080/v1" },
+      "models": { "auto": {}, "fast": {}, "quality": {}, "fair": {} }
+    }
+  }
+}
+```
+
+That makes freellmpool another provider in the model picker. The useful part is
+not that every free model is amazing; it is that docs, summaries, small edits,
+and "try another model" moments stop requiring a new provider config each time.
+
+### MCP clients
+
+For Claude Code:
+
+```bash
+claude mcp add freellmpool -- freellmpool mcp
+```
+
+The MCP server exposes single-model asks, multi-model panels, tokenmax fan-out,
+route previews, model listing, quota status, and lifetime stats. This is useful
+when the main agent should keep context and quota for hard work but can delegate
+a small self-contained question to a free model.
+
+### Metaswarm review
+
+The metaswarm adapter is deliberately review-only. It lets metaswarm call
+freellmpool for adversarial review or second opinions while implementation stays
+with agents that own the worktree-editing contract.
+
+```yaml
+adapters:
+  freellmpool:
+    enabled: true
+    roles: ["review", "second_opinion"]
+    adapter_path: ".metaswarm/adapters/freellmpool.sh"
+    routing: "quality"
+    review_mode: "strong"
+
+routing:
+  review_order: ["freellmpool"]
+  second_opinion: "freellmpool"
+```
+
+In this mode, missing strong-provider credentials fail closed with
+`error_type: "auth_missing"` before any provider call. That stops the review
+call rather than substituting another provider. That is the right failure mode
+for a review path: either the independent reviewer is configured, or it is
+obviously unavailable.
+
 It also gives contributors a concrete surface for small improvements: provider
 catalog fixes, docs, CLI output modes, and tests for capacity behavior.
 
@@ -108,4 +174,3 @@ catalog fixes, docs, CLI output modes, and tests for capacity behavior.
 - FAQ: https://github.com/0xzr/freellmpool/blob/main/FAQ.md
 - MCP docs: https://github.com/0xzr/freellmpool/blob/main/docs/MCP.md
 - Good first issues: https://github.com/0xzr/freellmpool/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22
-

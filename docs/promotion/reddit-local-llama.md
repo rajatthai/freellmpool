@@ -1,5 +1,16 @@
 # Reddit / r/LocalLLaMA draft
 
+Target: `r/LocalLLaMA`.
+
+Why this belongs there: many LocalLLaMA users run local models first but still
+use hosted free tiers for overflow, comparison, or coding-agent side tasks. The
+post must be explicit that freellmpool is local software over hosted upstream
+providers, not local/offline inference.
+
+Rules to respect: disclose affiliation, keep self-promotion rare, and avoid
+"I found this" framing. If your recent Reddit history is mostly project
+promotion, wait and contribute elsewhere first.
+
 ## Title options
 
 - freellmpool: a local router for hosted free LLM API tiers behind one OpenAI-compatible endpoint
@@ -24,6 +35,16 @@ Why I wanted this:
 - several free tiers are useful but individually small;
 - coding agents and scripts usually just want one OpenAI-compatible base URL;
 - free provider catalogs drift constantly.
+
+Where it fits next to local models:
+
+- keep local models as the default for private/offline work;
+- use hosted free tiers when the local GPU is busy;
+- run second-opinion panels across small hosted models before spending paid
+  quota;
+- give coding agents a fallback path for docs, summaries, triage, and small
+  edits;
+- test whether a hosted model is worth adding to your regular stack.
 
 What it does:
 
