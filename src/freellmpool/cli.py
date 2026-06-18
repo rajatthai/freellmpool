@@ -923,7 +923,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_quota.set_defaults(func=cmd_quota)
 
     p_stats = sub.add_parser(
-        "stats", help="lifetime usage totals (tokens served free, avoided cost)"
+        "stats", help="lifetime usage totals (tokens served free, estimated cost avoided)"
     )
     p_stats.set_defaults(func=cmd_stats)
 

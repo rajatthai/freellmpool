@@ -15,8 +15,8 @@ Pool free LLM tiers behind one local API
 
 freellmpool is an open-source Python tool that pools legitimate free LLM provider
 tiers behind one CLI, local OpenAI-compatible proxy, Python library, and MCP
-server. It starts without an API key and supports adding your own free-tier keys
-for more capacity.
+server. It supports keyless start when default keyless routes are available and
+adding your own free-tier keys for more capacity.
 
 ## Maker comment
 
@@ -30,9 +30,9 @@ freellmpool makes those tiers usable from one local interface:
 - experimental Anthropic-compatible proxy path
 - MCP server
 - provider failover and local quota tracking
-- no API key required to start
+- keyless start when default keyless routes are available
 
-Current catalog: 19 providers, 235 enabled chat routes, and 355 cataloged chat
+Current catalog: 19 cataloged providers, 235 enabled chat routes, and 355 cataloged chat
 models.
 
 This is not meant to replace paid frontier models or bypass provider limits. It
@@ -69,4 +69,3 @@ OpenRouter is a polished hosted aggregator. LiteLLM is the mature
 bring-your-own-keys proxy/SDK. freellmpool is narrower: it is local,
 pip-installable, starts without a key, focuses on legitimate free tiers, and
 ships a CLI plus MCP tools.
-

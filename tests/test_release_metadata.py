@@ -23,21 +23,20 @@ def test_release_metadata_versions_match_package() -> None:
     assert server["packages"][0]["version"] == version
     project_description = pyproject["project"]["description"]
     provider_count = re.search(r"(\d+) LLM providers", project_description)
-    model_count = re.search(r"(\d+\+) cataloged models", project_description)
-    live_count = re.search(r"\((\d+\+) live-validated,", readme)
+    model_count = re.search(r"(\d+) cataloged chat models", project_description)
+    enabled_route_count = re.search(r"\((\d+) enabled chat routes,", readme)
     assert provider_count is not None
     assert model_count is not None
-    assert live_count is not None
+    assert enabled_route_count is not None
     assert f"{provider_count.group(1)} LLM providers" in server["description"]
     assert f"{provider_count.group(1)} LLM providers" in readme
     assert f"{model_count.group(1)} cataloged" in readme
-    assert f"{live_count.group(1)} live-validated" in docs
+    assert f"{enabled_route_count.group(1)} enabled chat routes" in docs
     assert f"{model_count.group(1)} cataloged" in docs
     assert f"Latest release: {version}" in docs
     assert f'"softwareVersion": "{version}"' in docs
     assert f"freellmpool-{version}" in demo
-    assert f"{provider_count.group(1)} free tiers" in demo
-    assert f"{provider_count.group(1)} providers" in demo
+    assert f"{provider_count.group(1)} cataloged providers" in demo
 
 
 def test_client_user_agent_uses_package_version() -> None:

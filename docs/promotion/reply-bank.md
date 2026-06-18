@@ -34,7 +34,8 @@ CLI, and the free-tier catalog.
 
 FreeLLMAPI predates this project. The overlap is independent convergence:
 free-tier pooling is a useful idea. `freellmpool` focuses on pip-installable
-local usage, a one-shot CLI, MCP tools, and no-key first run.
+local usage, a one-shot CLI, MCP tools, and keyless start when default routes
+are available.
 
 ## Is it really free?
 
@@ -65,3 +66,10 @@ https://github.com/0xzr/freellmpool/issues?q=is%3Aissue%20is%3Aopen%20label%3A%2
 Do not send secrets or confidential data unless you are comfortable with the
 selected provider's current terms, privacy posture, and retention behavior.
 Anonymous keyless routes are convenient, not private.
+
+## Why is OpenCode Zen cataloged but disabled by default?
+
+Some routes are useful to track but not reliable or reviewed enough for default
+routing. OpenCode Zen is cataloged as a keyless OpenAI-compatible endpoint, but
+its free routes ship disabled by default pending explicit opt-in and provider
+policy review.

@@ -9,11 +9,12 @@ registry polish. Use this pack when posting externally.
 - Docs: <https://0xzr.github.io/freellmpool/>
 - PyPI: <https://pypi.org/project/freellmpool/>
 - Version: `0.11.4`
-- Catalog: 19 providers, 235 enabled chat models, 355 cataloged chat models
+- Catalog: 19 cataloged providers, 235 enabled chat routes, 355 cataloged chat models
 - First-run hook: installs with `pip install freellmpool` and can answer with no
   API keys through default keyless/key-optional routes.
-- Interfaces: CLI, Python library, OpenAI-compatible proxy, Anthropic-compatible
-  proxy path, and MCP server.
+- Interfaces: CLI, Python library, OpenAI-compatible proxy, experimental
+  Anthropic-compatible proxy path, and MCP server.
+- Audio: OpenAI-compatible speech-to-text through the transcription endpoint.
 - Strongest visual assets:
   - `assets/demo.svg`
   - `assets/tokenmax-results.svg`
@@ -52,6 +53,7 @@ Avoid overclaiming:
 - Do not imply it is a replacement for frontier paid models.
 - Do not imply all providers are private or equivalent.
 - Do not imply it evades provider limits.
+- Do not say "free forever" or imply provider free tiers are permanent.
 - Do not say "unlimited".
 
 ## Primary CTA

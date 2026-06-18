@@ -72,30 +72,29 @@ def metadata_errors(root: Path, *, version: str | None = None) -> list[str]:
     require(provider_phrase in project["description"], "pyproject provider count mismatch")
     require(provider_phrase in server["description"], "server.json provider count mismatch")
     require(provider_phrase in readme, "README provider count mismatch")
-    require(f"{counts.providers} providers" in demo, "demo SVG provider count mismatch")
-    require(f"{counts.providers} free tiers" in demo, "demo SVG free-tier count mismatch")
+    require(f"{counts.providers} cataloged providers" in demo, "demo SVG provider count mismatch")
     require(
-        f"{counts.enabled_chat_models} models" in demo,
-        "demo SVG enabled model count mismatch",
+        f"{counts.enabled_chat_models} routes" in demo,
+        "demo SVG enabled route count mismatch",
     )
     require(
-        f"{counts.live_bucket} live-validated" in readme,
-        "README live-validated model bucket mismatch",
+        f"{counts.enabled_chat_models} enabled chat routes" in readme,
+        "README enabled route bucket mismatch",
     )
     require(
-        f"{counts.live_bucket} live-validated" in docs_index,
-        "docs/index.html live-validated model bucket mismatch",
+        f"{counts.enabled_chat_models} enabled chat routes" in docs_index,
+        "docs/index.html enabled route bucket mismatch",
     )
     require(
-        f"{counts.cataloged_bucket} cataloged" in project["description"],
+        f"{counts.cataloged_chat_models} cataloged" in project["description"],
         "pyproject cataloged model bucket mismatch",
     )
     require(
-        f"{counts.cataloged_bucket} cataloged" in readme,
+        f"{counts.cataloged_chat_models} cataloged" in readme,
         "README cataloged model bucket mismatch",
     )
     require(
-        f"{counts.cataloged_bucket} cataloged" in docs_index,
+        f"{counts.cataloged_chat_models} cataloged" in docs_index,
         "docs/index.html cataloged model bucket mismatch",
     )
     require("16 providers, 56 models" not in demo_script, "scripts/demo.sh has stale proxy count")

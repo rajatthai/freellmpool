@@ -4,11 +4,11 @@
 
 I built freellmpool: a local, open-source pool for free LLM API tiers.
 
-- 19 providers
+- 19 cataloged providers
 - 235 enabled chat routes
 - OpenAI-compatible local proxy
 - MCP server
-- no API key needed to start
+- keyless start when default keyless routes are available
 - add your own free keys for more capacity
 
 https://github.com/0xzr/freellmpool
@@ -34,10 +34,10 @@ coding agents, docs, triage, and side tasks.
 
 4/ Current catalog:
 
-- 19 providers
+- 19 cataloged providers
 - 235 enabled chat routes
 - 355 cataloged chat models
-- no API key required to start
+- keyless start when default keyless routes are available
 
 5/ It handles practical routing problems: 429s, timeouts, empty replies, stale
 model ids, and local per-day quota tracking.
@@ -67,10 +67,15 @@ It supports:
 - a local OpenAI-compatible proxy
 - an experimental Anthropic-compatible proxy path
 - MCP server tools
-- no-key first run, with optional free-tier provider keys for more capacity
+- keyless start when default keyless routes are available, with optional
+  free-tier provider keys for more capacity
 
-Current catalog: 19 providers, 235 enabled chat routes, and 355 cataloged chat
+Current catalog: 19 cataloged providers, 235 enabled chat routes, and 355 cataloged chat
 models.
+
+It is not a privacy layer. Prompts go to the selected upstream provider; the FAQ
+covers that tradeoff:
+https://github.com/0xzr/freellmpool/blob/main/FAQ.md
 
 This is not meant to replace frontier paid models. It is useful for everyday
 developer tasks where free-tier models are good enough: docs, triage,
@@ -83,10 +88,9 @@ Repo: https://github.com/0xzr/freellmpool
 I built `freellmpool`, a local open-source gateway for pooling free LLM provider
 tiers.
 
-CLI, Python library, local OpenAI-compatible proxy, experimental Anthropic proxy
-path, and MCP server.
+CLI, Python library, local OpenAI-compatible proxy, experimental
+Anthropic-compatible path, and MCP server.
 
-19 providers, 235 enabled chat routes, no API key needed to start.
+19 cataloged providers, 235 enabled chat routes, keyless start when routes are available.
 
 https://github.com/0xzr/freellmpool
-

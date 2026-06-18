@@ -4,7 +4,7 @@
 > providers (Groq, Cerebras, NVIDIA, Gemini, OpenRouter, Cloudflare, Mistral, Cohere
 > and more) behind one endpoint, with automatic failover and per-day quota tracking.
 > Works as a CLI, a Python library, a local proxy, and an MCP server. Keyless to
-> start (`pip install freellmpool`); the proxy speaks the OpenAI and Anthropic APIs,
+> start (`pip install freellmpool`); the proxy speaks the OpenAI API and has an experimental Anthropic-compatible path,
 > so Codex, Claude Code, and aider run on pooled free models unchanged. MIT licensed.
 > Capacity tools (`freellmpool capacity status`, `providers health`, `keys add`) show which
 > free tiers are usable right now and help configure more.

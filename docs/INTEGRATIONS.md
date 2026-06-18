@@ -40,7 +40,7 @@ spread quota). Full guide: <https://0xzr.github.io/freellmpool/run-opencode-on-f
 
 **Embedded dashboard + tools (optional).** Two OpenCode plugins live in the repo:
 - [`integrations/opencode-tui`](../integrations/opencode-tui) — a live in-editor TUI
-  dashboard (routing mode, $ saved, tokens served free, provider race, latency
+  dashboard (routing mode, estimated savings, tokens served free, provider race, latency
   sparkline, last-served model). Install: `opencode plugin -g file:<repo>/integrations/opencode-tui`.
 - [`integrations/opencode`](../integrations/opencode) — a server plugin adding
   `freellmpool_status` and `freellmpool_models` tools and a served-model toast.

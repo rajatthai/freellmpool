@@ -13,21 +13,23 @@ LLM provider tiers behind one local API.
 
 GitHub: https://github.com/0xzr/freellmpool
 
-It is meant for developers who want free inference capacity for scripts, coding
-agents, docs, triage, and side tasks without wiring every provider separately.
+It is meant for developers who want free-tier inference capacity for scripts,
+coding agents, docs, triage, and side tasks without wiring every provider
+separately.
 
 Features:
 
-- CLI: `freellmpool ask`, `tokenmax`, `providers`, `quota`, `stats`
+- CLI: `freellmpool ask`, `tokenmax`, `providers`, `capacity status`, `stats`
 - Python library
 - local OpenAI-compatible proxy
 - experimental Anthropic-compatible proxy path
 - MCP server
+- OpenAI-compatible speech-to-text endpoint
 - provider failover and local quota tracking
-- no API key required for the first reply; optional free-tier keys unlock more
-  models and capacity
+- keyless start when default keyless routes are available; optional free-tier
+  keys unlock more models and capacity
 
-The current packaged catalog has 19 providers, 235 enabled chat routes, and 355
+The current packaged catalog has 19 cataloged providers, 235 enabled chat routes, and 355
 cataloged chat models.
 
 The project is intentionally honest about limitations:
@@ -43,4 +45,3 @@ status docs, capacity fixtures, and agent recipe tests:
 https://github.com/0xzr/freellmpool/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22
 
 Feedback and small provider-catalog fixes would be useful.
-

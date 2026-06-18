@@ -175,9 +175,9 @@ class Pool:
         # provider_id -> monotonic time until which to deprioritize after a 429
         self._cooldown_until: dict[str, float] = {}
         self._cooldown_lock = threading.Lock()
-        # cumulative usage for the "$ saved vs OpenAI" metric. `self.stats` is the
+        # cumulative usage for the estimated-cost metric. `self.stats` is the
         # in-memory session counter; `_stats_store` (optional) persists lifetime
-        # totals across restarts so the served-free / avoided-cost number grows.
+        # totals across restarts so the served-free / estimated-cost number grows.
         self.stats = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0, "cache_hits": 0}
         self._stats_store = stats_store
         self._stats_lock = threading.Lock()  # the proxy serves requests on many threads
